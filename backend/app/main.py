@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1 import admin, auth
+from app.config import settings
 from app.core.exceptions import (
     AppBaseException,
     AppValidationError,
@@ -28,8 +29,10 @@ _EXCEPTION_STATUS_MAP: dict[type[AppBaseException], int] = {
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # RAGEngine will be initialized here in STEP 3
+    from app.rag.engine import RAGEngine
+    await RAGEngine.initialize(settings)
     yield
+    await RAGEngine.shutdown()
 
 
 app = FastAPI(title="RAG Knowledge Platform", version="0.1.0", lifespan=lifespan)

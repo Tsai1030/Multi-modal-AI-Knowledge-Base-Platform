@@ -137,3 +137,75 @@
 ## 驗證結果
 - 所有 12 個測試通過（`uv run pytest tests/test_auth.py -v`）
 - FastAPI app 可正確 import，13 個 route 全部註冊成功
+
+---
+
+# STEP 3 — RAG-Anything 整合核心 完成摘要
+
+## 完成項目
+
+### 1. `rag/llm_adapter.py` — OllamaLLMAdapter + OllamaVisionAdapter
+
+**OllamaLLMAdapter**
+- `complete(prompt, system_prompt, history_messages, stream, **kwargs) -> str`：POST Ollama `/api/chat`
+- `complete_stream(...) -> AsyncGenerator[str, None]`：串流模式逐 token yield
+- `as_llm_func() -> Callable`：回傳符合 LightRAG `llm_model_func` 簽名的 callable（model 預先 bind）
+- LightRAG 呼叫規範：`await llm_func(prompt, system_prompt=None, history_messages=[], stream=False, **kwargs)`
+
+**OllamaVisionAdapter**（llava:7b，文件圖片 caption 專用，不用於即時對話）
+- `vision_complete(...)` 三段式邏輯：
+  1. `messages` 提供 → VLM Enhanced Query，直接送 llava
+  2. `image_data` 提供 → 單張圖片 base64 分析
+  3. fallback → 委派給 llm_adapter（gpt-oss:latest）純文字
+- `as_vision_func() -> Callable`：回傳符合 RAGAnything `vision_model_func` 簽名的 callable
+
+### 2. `rag/embedding_adapter.py` — BGEEmbeddingAdapter
+- Lazy load BAAI/bge-m3（`threading.Lock` 保證 thread-safe）
+- `embed(texts) -> list[list[float]]`：asyncio executor 執行 `model.encode()`，batch_size=32
+- `to_embedding_func() -> EmbeddingFunc`：回傳 LightRAG `EmbeddingFunc(embedding_dim=1024, max_token_size=8192)`
+
+### 3. `rag/chroma_adapter.py` — ChromaVectorDBStorage
+- 繼承 `lightrag.base.BaseVectorStorage`，完整實作所有抽象方法
+- 實作方法：`initialize`, `upsert`, `query`, `get_by_id`, `get_by_ids`, `get_vectors_by_ids`, `delete`, `delete_entity`, `delete_entity_relation`, `drop`, `index_done_callback`
+- ChromaDB collection 命名：`{workspace}_{namespace}_{model}_{dim}d`
+- 透過 `RAGEngine._register_chroma_storage()` monkey-patch 注入 `lightrag.kg.STORAGES["ChromaVectorDBStorage"]`
+
+### 4. `rag/engine.py` — RAGEngine singleton
+- 啟動順序：注冊 ChromaStorage → OllamaLLMAdapter → OllamaVisionAdapter → BGEEmbeddingAdapter → RAGAnythingConfig → RAGAnything
+- `RAGAnythingConfig(parser="mineru", enable_image_processing=True, enable_table_processing=True, enable_equation_processing=True)`
+- `lightrag_kwargs` 傳入 `vector_storage="ChromaVectorDBStorage"` + chroma connection params
+- `get_rag()`, `get_llm_adapter()`, `shutdown()` class methods
+
+### 5. `app/main.py` — lifespan 整合
+- `lifespan` 加入 `await RAGEngine.initialize(settings)` / `await RAGEngine.shutdown()`
+
+### 6. `tests/test_rag_adapters.py` — 16 個測試全部通過
+- OllamaLLMAdapter (4)：complete 回傳、system_prompt 注入、history 注入、as_llm_func
+- OllamaVisionAdapter (4)：messages 模式、image_data 模式、fallback 模式、as_vision_func
+- BGEEmbeddingAdapter (2)：embed 向量維度、batch 處理 70 筆
+- ChromaVectorDBStorage (5)：initialize、upsert、query 結果轉換、delete、drop
+- `test_bge_embedding_func_metadata` (1)：EmbeddingFunc metadata 驗證
+
+## 技術決策紀錄
+
+### 決策 1：ChromaVectorDBStorage 實作方式
+- **問題**：當前版本 lightrag `kg/` 目錄缺少 `chroma_impl.py`（只有 STORAGES dict 登錄但 impl 不存在）
+- **方案**：自實作 `ChromaVectorDBStorage(BaseVectorStorage)` + monkey-patch `STORAGES["ChromaVectorDBStorage"]`
+- **原因**：Option B（standalone）會讓整個 ChromaDB 整合變成空殼，影響後續所有 STEP 設計
+
+### 決策 2：conversation_history（非 history_messages）
+- **發現**：計畫書寫 `history_messages=...` 但 LightRAG `QueryParam` 實際欄位是 `conversation_history`
+- **影響**：STEP 4 ConversationService 呼叫 `rag.aquery()` 時需用 `conversation_history=` 參數
+- **action**：STEP 4 實作時按正確欄位名稱傳入
+
+### 決策 3：MinerU 暫未安裝
+- `RAGAnythingConfig(parser="mineru")` 已寫入設定
+- STEP 3 只建介面層，不觸發 parser；MinerU 在 STEP 5 文件上傳時才需要
+
+## 注意事項（測試 mock 相關）
+- `tests/test_rag_adapters.py` 所有測試使用 mock（Ollama、ChromaDB、SentenceTransformer 均未真實呼叫）
+- TODO（Docker 階段）：替換為真實服務整合測試後刪除 mock
+
+## 驗證結果
+- 16 個 RAG adapter 測試通過（`uv run pytest tests/test_rag_adapters.py -v`）
+- 12 個 auth 測試繼續通過（共 28 個測試全數通過）
