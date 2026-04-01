@@ -209,3 +209,95 @@
 ## 驗證結果
 - 16 個 RAG adapter 測試通過（`uv run pytest tests/test_rag_adapters.py -v`）
 - 12 個 auth 測試繼續通過（共 28 個測試全數通過）
+
+---
+
+# STEP 4 — 多輪對話設計：Conversation 管理與 Compact 完成摘要
+
+## 完成項目
+
+### 1. `rag/conversation_compactor.py` — ConversationCompactor
+
+- `COMPACT_PROMPT_TEMPLATE`：繁體中文摘要 prompt，以「對話摘要：」開頭
+- `compact_threshold=15`：訊息數達此值觸發 Compact
+- `compact_target=6`：Compact 後保留最近 N 條訊息
+- `should_compact(message_count) -> bool`：`message_count >= compact_threshold`
+- `compact(messages, keep_last_n) -> tuple[str, list[Message]]`：
+  - 舊訊息格式化為純文字（用戶/助理/系統 role 標籤）
+  - 呼叫 `llm_adapter.complete()` 生成摘要
+  - 回傳 `(summary_text, messages[-keep_last_n:])`
+  - 防守：`keep_last_n >= len(messages)` 時壓縮全部但保留全部
+- `estimate_tokens(text) -> int`：`len(text) // 3`（中英文粗估）
+- `_format_messages`：靜態方法，role 轉換為中文標籤
+
+### 2. `services/conversation_service.py` — ConversationService
+
+**Context 組裝流程（`get_conversation_context`）：**
+```
+[system] → [assistant(compact_summary)?] → [...history msgs] → [user(current_question)]
+```
+
+- `get_conversation_context(session_id, current_question) -> list[dict]`：
+  1. 查詢 session（不存在拋 `NotFoundError`）
+  2. 取最近 `compact_threshold` 條訊息
+  3. 若 `should_compact(session.message_count)` → 執行 `_execute_compact`
+  4. Compact 後改取 `compact_target + 1` 條（+1 為 summary marker 預留）
+  5. 組裝 history，過濾 `is_compacted_summary=True` 的 DB marker
+  6. 加入 `session.compact_summary` 作為 assistant message（若有）
+- `save_user_message`：建立訊息 + `increment_message_count`
+- `save_assistant_message`：建立訊息 + `update_last_message` + `increment_message_count`
+- `_execute_compact`：
+  1. 呼叫 `compactor.compact()` → LLM 摘要
+  2. 刪除被壓縮的舊訊息（keep_ids 排除）
+  3. 在 DB 插入 `role=system, is_compacted_summary=True` 的 marker
+  4. 更新 `session.compact_summary` 與 `is_compacted=True`
+- `auto_title_session`：若 `title.startswith("新對話")` → 取前 20 字更新標題
+
+### 3. `services/chat_session_service.py` — ChatSessionService
+
+| 方法 | 說明 |
+|------|------|
+| `create_session(user_id, query_mode="hybrid")` | 預設標題「新對話 {datetime}」 |
+| `list_sessions(user_id, skip, limit)` | 委派 SessionRepository，按 last_message_at DESC |
+| `get_session_with_messages(session_id, user_id, message_limit=50)` | 驗證 session.user_id == user_id，防跨用戶存取 |
+| `rename_session(session_id, user_id, new_title)` | 驗證 ownership |
+| `delete_session(session_id, user_id)` | CASCADE 自動刪除 messages |
+
+所有方法：session 不存在拋 `NotFoundError`，非 owner 拋 `AuthorizationError`
+
+### 4. `tests/test_conversation.py` — 23 個測試全數通過 ✅
+
+| 類別 | 數量 | 測試重點 |
+|------|------|---------|
+| `TestConversationCompactor` | 6 | should_compact 閾值邊界、compact 分割與 LLM 呼叫、edge case、token 估算 |
+| `TestConversationService` | 9 | context 組裝結構、compact summary 注入、DB marker 過濾、compact 觸發、長度上限、auto_title、訊息儲存 |
+| `TestChatSessionService` | 8 | 建立 session 預設值、query_mode、分頁、ownership 驗證、NotFoundError |
+
+## 關鍵設計決策
+
+### 決策 1：`conversation_history=` 參數（STEP 4 確認）
+- STEP 3 已標註：呼叫 `rag.aquery()` 時使用 `conversation_history=`（非 `history_messages=`）
+- `get_conversation_context()` 回傳的 `list[dict]` 即為此參數的值
+- **使用方式**：
+  ```python
+  context = await conversation_svc.get_conversation_context(session_id, question)
+  result = await rag.aquery(question, param=QueryParam(conversation_history=context))
+  ```
+
+### 決策 2：Compact 後取 `compact_target + 1` 條訊息
+- `_execute_compact` 在 DB 插入 summary marker（`is_compacted_summary=True`），此 marker 有新的 `created_at`，會出現在 `get_recent_by_session` 的最新結果中
+- 若只取 `compact_target`，marker 佔一個位置，實際 history 只剩 `compact_target - 1` 條
+- 解決：取 `compact_target + 1`，context assembly 過濾 marker，確保保留 `compact_target` 條真實對話
+
+### 決策 3：Summary marker in DB vs session.compact_summary
+- DB marker（`is_compacted_summary=True`）：用於審計與災難恢復
+- `session.compact_summary`：context assembly 的實際資料來源
+- 兩者並存，context assembly 透過 session 欄位取值，不依賴 DB marker
+
+## 注意事項（測試 mock 相關）
+- 所有測試使用 mock（無真實 DB / LLM 呼叫）
+- TODO（Docker 階段）：替換為真實服務整合測試後刪除 mock
+
+## 驗證結果
+- 23 個 Conversation 測試通過（`uv run pytest tests/test_conversation.py -v`）
+- 51 個測試全數通過（23 conversation + 16 RAG adapter + 12 auth）
