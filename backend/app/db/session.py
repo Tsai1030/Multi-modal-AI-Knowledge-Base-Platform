@@ -16,6 +16,13 @@ AsyncSessionFactory = async_sessionmaker(
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
-    """Async session generator for use with FastAPI dependency injection."""
+    """Async session generator for use with FastAPI dependency injection.
+    Commits on successful request completion, rolls back on error.
+    """
     async with AsyncSessionFactory() as session:
-        yield session
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise

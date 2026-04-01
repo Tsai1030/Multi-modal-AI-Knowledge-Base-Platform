@@ -25,5 +25,11 @@ class UserRepository(BaseRepository[User]):
         )
         return list(result.scalars().all())
 
+    async def get_by_id_str(self, id_str: str) -> User | None:
+        try:
+            return await self.get_by_id(uuid.UUID(id_str))
+        except ValueError:
+            return None
+
     async def deactivate(self, id: uuid.UUID) -> User | None:
         return await self.update(id, {"is_active": False})
