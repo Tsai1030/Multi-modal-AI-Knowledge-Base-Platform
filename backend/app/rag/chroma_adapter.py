@@ -21,9 +21,11 @@ class ChromaVectorDBStorage(BaseVectorStorage):
     def __post_init__(self) -> None:
         self._validate_embedding_func()
 
-        # Pull connection params from global_config when available
-        self.host = self.global_config.get("chroma_host", self.host)
-        self.port = int(self.global_config.get("chroma_port", self.port))
+        # LightRAG passes storage-specific settings via vector_db_storage_cls_kwargs.
+        # Keep the legacy top-level fallback so older configs still work.
+        storage_kwargs = self.global_config.get("vector_db_storage_cls_kwargs", {})
+        self.host = storage_kwargs.get("host", self.global_config.get("chroma_host", self.host))
+        self.port = int(storage_kwargs.get("port", self.global_config.get("chroma_port", self.port)))
 
         self._client: chromadb.AsyncHttpClient | None = None
         self._collection: chromadb.AsyncCollection | None = None

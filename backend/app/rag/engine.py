@@ -21,8 +21,15 @@ def _register_chroma_storage() -> None:
     LightRAG resolves vector_storage by string name via lightrag.kg.STORAGES.
     We patch the registry once at startup so LightRAG can locate our implementation.
     """
-    from lightrag.kg import STORAGES
+    from lightrag.kg import STORAGES, STORAGE_ENV_REQUIREMENTS, STORAGE_IMPLEMENTATIONS
+
     STORAGES["ChromaVectorDBStorage"] = "app.rag.chroma_adapter"
+
+    vector_implementations = STORAGE_IMPLEMENTATIONS["VECTOR_STORAGE"]["implementations"]
+    if "ChromaVectorDBStorage" not in vector_implementations:
+        vector_implementations.append("ChromaVectorDBStorage")
+
+    STORAGE_ENV_REQUIREMENTS.setdefault("ChromaVectorDBStorage", [])
 
 
 class RAGEngine:
@@ -80,11 +87,19 @@ class RAGEngine:
                 "vector_storage": "ChromaVectorDBStorage",
                 "vector_db_storage_cls_kwargs": {
                     "cosine_better_than_threshold": 0.2,
+                    "host": settings.chroma_host,
+                    "port": settings.chroma_port,
                 },
-                "chroma_host": settings.chroma_host,
-                "chroma_port": settings.chroma_port,
             },
         )
+
+        # RAGAnything does not eagerly construct its internal LightRAG instance.
+        # Query requests call rag.aquery() directly, so we must initialize the
+        # underlying LightRAG object during application startup instead of waiting
+        # for the first document-processing path to do it implicitly.
+        init_result = await cls._rag_instance._ensure_lightrag_initialized()
+        if not init_result.get("success"):
+            raise RuntimeError(init_result.get("error", "Failed to initialize LightRAG"))
 
         logger.info("RAGEngine initialized successfully")
 

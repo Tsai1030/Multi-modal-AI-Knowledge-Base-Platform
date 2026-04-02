@@ -4,6 +4,8 @@ import asyncio
 import threading
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from lightrag.utils import EmbeddingFunc
 
 if TYPE_CHECKING:
@@ -37,17 +39,21 @@ class BGEEmbeddingAdapter:
             from sentence_transformers import SentenceTransformer
             self._model = SentenceTransformer(self._model_name, device=self._device)
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    async def embed(self, texts: list[str]) -> np.ndarray:
         """Embed a list of texts. Runs model.encode() in a thread-pool executor."""
         self._ensure_model_loaded()
 
-        def _encode() -> list[list[float]]:
-            all_vectors: list[list[float]] = []
+        def _encode() -> np.ndarray:
+            all_vectors: list[np.ndarray] = []
             for i in range(0, len(texts), self._BATCH_SIZE):
                 batch = texts[i : i + self._BATCH_SIZE]
                 vectors = self._model.encode(batch, convert_to_numpy=True)
-                all_vectors.extend(v.tolist() for v in vectors)
-            return all_vectors
+                all_vectors.append(vectors)
+
+            if not all_vectors:
+                return np.empty((0, self.EMBEDDING_DIM), dtype=np.float32)
+
+            return np.vstack(all_vectors).astype(np.float32, copy=False)
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _encode)
@@ -55,7 +61,7 @@ class BGEEmbeddingAdapter:
     def to_embedding_func(self) -> EmbeddingFunc:
         """Return a LightRAG EmbeddingFunc wrapping this adapter."""
 
-        async def _embed_func(texts: list[str]) -> list[list[float]]:
+        async def _embed_func(texts: list[str]) -> np.ndarray:
             return await self.embed(texts)
 
         return EmbeddingFunc(

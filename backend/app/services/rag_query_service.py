@@ -54,12 +54,10 @@ class RAGQueryService:
 
         try:
             conv_context = await self._conv_svc.get_conversation_context(session_id, question)
-
-            from lightrag import QueryParam
             rag_result: str = await self._rag.aquery(
                 question,
                 mode=mode,
-                param=QueryParam(conversation_history=conv_context),
+                conversation_history=conv_context,
             )
         except Exception as exc:
             logger.error(f"RAG query failed for session {session_id}: {exc}")
