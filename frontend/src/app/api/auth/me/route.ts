@@ -2,7 +2,10 @@ import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 
 const COOKIE_NAME = 'auth_token'
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_BASE =
+  process.env.API_INTERNAL_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  'http://localhost:8000'
 
 // GET /api/auth/me — read httpOnly cookie, verify with FastAPI, return user + token
 export async function GET() {

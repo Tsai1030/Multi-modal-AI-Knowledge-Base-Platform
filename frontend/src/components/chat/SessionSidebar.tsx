@@ -271,7 +271,7 @@ export function SessionSidebar() {
       </div>
 
       {/* Session list */}
-      <ScrollArea className="flex-1 px-2">
+      <ScrollArea className="min-h-0 flex-1 px-2">
         <div className="flex flex-col gap-1 py-2">
           {!collapsed && sessions.length === 0 && (
             <div className="rounded-2xl border border-sidebar-border bg-sidebar-accent/40 px-3 py-4 text-center text-xs text-sidebar-foreground/55">
