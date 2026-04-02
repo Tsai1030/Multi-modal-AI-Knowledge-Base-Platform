@@ -2,9 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Compass, Database, Globe, MessageSquarePlus } from 'lucide-react'
+import { Database, Globe, MessageSquarePlus } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useChatStore } from '@/store/chatStore'
 
@@ -53,18 +52,10 @@ export default function ChatDefaultPage() {
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center px-6 py-10">
-        <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="grid gap-6">
           <Card className="border-border/70 bg-card/90 shadow-[0_24px_60px_-30px_rgba(15,23,42,0.45)] backdrop-blur">
-            <CardHeader className="gap-4">
-              <div className="flex size-12 items-center justify-center rounded-2xl border border-border bg-muted">
-                <Compass />
-              </div>
-              <div className="flex flex-col gap-2">
-                <CardTitle className="text-2xl tracking-tight">開始一段新對話</CardTitle>
-                <CardDescription className="max-w-2xl text-sm leading-6">
-                  先建立對話 session，再進入 RAG 問答畫面。建立後即可直接提問、串流回覆，並保留聊天歷史。
-                </CardDescription>
-              </div>
+            <CardHeader className="items-center pb-2 pt-8 text-center">
+              <CardTitle className="text-3xl tracking-tight">開始一段新對話</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               {MODE_OPTIONS.map((option) => {
@@ -99,34 +90,6 @@ export default function ChatDefaultPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-border/70 bg-gradient-to-br from-muted/70 via-background to-background shadow-[0_24px_60px_-30px_rgba(15,23,42,0.35)]">
-            <CardHeader>
-              <CardTitle className="text-base">使用流程</CardTitle>
-              <CardDescription>
-                這一頁對齊 step 7 規劃，作為聊天首頁與建立入口。
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4 text-sm text-muted-foreground">
-              <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
-                1. 先選擇 query mode 建立對話。
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
-                2. 進入 `/chat/[sessionId]` 後開始提問，訊息會自動存入 session。
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
-                3. 左側 sidebar 可切換、重新命名與刪除對話。
-              </div>
-              <Button
-                variant="outline"
-                className="mt-2 justify-start"
-                onClick={() => handleCreateSession('hybrid')}
-                disabled={isPending}
-              >
-                <MessageSquarePlus data-icon="inline-start" />
-                直接建立 Hybrid 對話
-              </Button>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>

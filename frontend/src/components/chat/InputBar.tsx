@@ -114,7 +114,7 @@ export function InputBar({
             type="button"
             size="sm"
             variant="ghost"
-            className="size-8 p-0"
+            className="size-8 p-0 transition-transform hover:scale-110"
             onClick={() => fileInputRef.current?.click()}
             disabled={isStreaming || disabled || isUploading}
           >
@@ -126,7 +126,7 @@ export function InputBar({
           <Button
             type="button"
             size="sm"
-            className="size-8 p-0"
+            className="size-8 p-0 transition-transform hover:scale-110"
             onClick={handleSend}
             disabled={isStreaming || disabled || isUploading}
           >

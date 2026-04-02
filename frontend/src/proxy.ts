@@ -25,7 +25,7 @@ export function proxy(request: NextRequest) {
   // Root redirect
   if (pathname === '/') {
     return NextResponse.redirect(
-      new URL(hasToken ? '/chat' : '/login', request.url)
+      new URL(hasToken ? '/chat' : '/landing', request.url)
     )
   }
 
