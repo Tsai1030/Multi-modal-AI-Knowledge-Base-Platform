@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # Ollama
     ollama_base_url: str = "http://localhost:11434"
     ollama_llm_model: str = "gpt-oss:latest"
-    ollama_vision_model: str = "llava:7b"
+    ollama_vision_model: str = "llava:latest"
 
     # Embedding
     embedding_model_name: str = "BAAI/bge-m3"

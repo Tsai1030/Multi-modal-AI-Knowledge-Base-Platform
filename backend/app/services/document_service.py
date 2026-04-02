@@ -1,7 +1,10 @@
 import asyncio
+import base64
 import logging
 import uuid
 from pathlib import Path
+import xml.etree.ElementTree as ET
+import zipfile
 
 from fastapi import UploadFile
 from lightrag.base import DocStatus
@@ -28,6 +31,8 @@ class DocumentService:
     })
     MAX_FILE_SIZE_MB: int = 50
     PROCESS_TIMEOUT_SECONDS: int = 600
+    _DOCX_XML_NS: str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    _IMAGE_EXTENSIONS: frozenset[str] = frozenset({".png", ".jpg", ".jpeg"})
 
     def __init__(self, doc_repo: DocumentRepository, rag_engine, upload_dir: Path) -> None:
         self._doc_repo = doc_repo
@@ -147,14 +152,26 @@ class DocumentService:
                     output_dir,
                 )
 
-                result = await asyncio.wait_for(
-                    self._rag.process_document_complete(
-                        file_path=str(document_path),
-                        output_dir=str(output_dir),
-                        doc_id=rag_doc_id,
-                    ),
-                    timeout=self.PROCESS_TIMEOUT_SECONDS,
-                )
+                suffix = document_path.suffix.lower()
+                if suffix in self._IMAGE_EXTENSIONS:
+                    result = await asyncio.wait_for(
+                        self._ingest_image_fast(document_path, doc.original_filename, rag_doc_id),
+                        timeout=min(self.PROCESS_TIMEOUT_SECONDS, 120),
+                    )
+                elif suffix == ".docx" and not self._has_libreoffice_binary():
+                    result = await asyncio.wait_for(
+                        self._ingest_docx_fast(document_path, rag_doc_id),
+                        timeout=min(self.PROCESS_TIMEOUT_SECONDS, 120),
+                    )
+                else:
+                    result = await asyncio.wait_for(
+                        self._rag.process_document_complete(
+                            file_path=str(document_path),
+                            output_dir=str(output_dir),
+                            doc_id=rag_doc_id,
+                        ),
+                        timeout=self.PROCESS_TIMEOUT_SECONDS,
+                    )
                 logger.info(
                     "Document %s finished RAG processing call with result=%s",
                     document_id,
@@ -232,6 +249,86 @@ class DocumentService:
             await self._rag.lightrag.full_docs.index_done_callback()
             await self._rag.lightrag.doc_status.delete(list(stale_doc_ids))
             await self._rag.lightrag.doc_status.index_done_callback()
+
+    async def _ingest_image_fast(self, image_path: Path, original_filename: str, doc_id: str):
+        image_text = await self._build_image_text(image_path, original_filename)
+        content_list = [{
+            "type": "text",
+            "text": image_text,
+            "page_idx": 0,
+        }]
+        return await self._rag.insert_content_list(
+            content_list=content_list,
+            file_path=str(image_path),
+            doc_id=doc_id,
+        )
+
+    async def _ingest_docx_fast(self, docx_path: Path, doc_id: str):
+        extracted_text = self._extract_docx_text(docx_path)
+        if not extracted_text.strip():
+            raise RuntimeError("DOCX text extraction returned empty content")
+        content_list = [{
+            "type": "text",
+            "text": extracted_text,
+            "page_idx": 0,
+        }]
+        return await self._rag.insert_content_list(
+            content_list=content_list,
+            file_path=str(docx_path),
+            doc_id=doc_id,
+        )
+
+    def _has_libreoffice_binary(self) -> bool:
+        candidates = (
+            "C:\\Program Files\\LibreOffice\\program\\soffice.exe",
+            "C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe",
+        )
+        return any(Path(candidate).exists() for candidate in candidates)
+
+    def _extract_docx_text(self, docx_path: Path) -> str:
+        with zipfile.ZipFile(docx_path, "r") as archive:
+            with archive.open("word/document.xml") as document_xml:
+                tree = ET.parse(document_xml)
+
+        ns = {"w": self._DOCX_XML_NS}
+        paragraphs: list[str] = []
+        for para in tree.findall(".//w:body/w:p", ns):
+            runs = para.findall(".//w:t", ns)
+            text = "".join(run.text or "" for run in runs).strip()
+            if text:
+                paragraphs.append(text)
+        return "\n".join(paragraphs)
+
+    async def _build_image_text(self, image_path: Path, original_filename: str) -> str:
+        default_text = (
+            f"Image document: {original_filename}\n"
+            f"Filename: {image_path.name}\n"
+            "Auto caption unavailable; indexed with file metadata only."
+        )
+
+        vision_func = getattr(self._rag, "vision_model_func", None)
+        if vision_func is None:
+            return default_text
+
+        try:
+            image_base64 = base64.b64encode(image_path.read_bytes()).decode("utf-8")
+            caption = await asyncio.wait_for(
+                vision_func(
+                    "Describe this image. Include visible text and key objects.",
+                    image_data=image_base64,
+                ),
+                timeout=30,
+            )
+            caption_text = str(caption).strip()
+            if not caption_text:
+                return default_text
+            return (
+                f"Image document: {original_filename}\n"
+                f"Caption:\n{caption_text}"
+            )
+        except Exception as exc:
+            logger.warning("Image caption generation failed for %s: %s", image_path, exc)
+            return default_text
 
     async def list_documents(self, user: User, skip: int = 0, limit: int = 50) -> list[Document]:
         """Admin sees all documents; regular users see only their own."""

@@ -173,26 +173,36 @@ class OllamaVisionAdapter:
         return vision_func
 
     async def _chat_with_messages(self, messages: list) -> str:
-        payload = {"model": self._model, "messages": messages, "stream": False}
+        payload = {
+            "model": self._model,
+            "messages": self._normalize_multimodal_messages_for_ollama(messages),
+            "stream": False,
+        }
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.post(f"{self._base_url}/api/chat", json=payload)
+            if resp.status_code == 404 and self._model != "llava:latest":
+                payload["model"] = "llava:latest"
+                resp = await client.post(f"{self._base_url}/api/chat", json=payload)
             resp.raise_for_status()
             return resp.json()["message"]["content"]
 
     async def _chat_with_image(
         self, prompt: str, image_data: str, system_prompt: str | None
     ) -> str:
-        content: list[dict] = [
-            {"type": "text", "text": prompt},
-            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_data}"}},
-        ]
         messages: list[dict] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": content})
+        messages.append({
+            "role": "user",
+            "content": prompt or "Please describe this image in detail.",
+            "images": [image_data],
+        })
         payload = {"model": self._model, "messages": messages, "stream": False}
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.post(f"{self._base_url}/api/chat", json=payload)
+            if resp.status_code == 404 and self._model != "llava:latest":
+                payload["model"] = "llava:latest"
+                resp = await client.post(f"{self._base_url}/api/chat", json=payload)
             resp.raise_for_status()
             return resp.json()["message"]["content"]
 
@@ -206,3 +216,41 @@ class OllamaVisionAdapter:
             resp = await client.post(f"{self._base_url}/api/chat", json=payload)
             resp.raise_for_status()
             return resp.json()["message"]["content"]
+
+    @staticmethod
+    def _normalize_multimodal_messages_for_ollama(messages: list) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                normalized.append({"role": role, "content": content})
+                continue
+
+            if not isinstance(content, list):
+                normalized.append({"role": role, "content": str(content)})
+                continue
+
+            text_parts: list[str] = []
+            images: list[str] = []
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                part_type = part.get("type")
+                if part_type == "text":
+                    text_parts.append(str(part.get("text", "")))
+                elif part_type == "image_url":
+                    url = part.get("image_url", {}).get("url", "")
+                    if isinstance(url, str) and "base64," in url:
+                        images.append(url.split("base64,", 1)[1])
+
+            normalized_msg: dict[str, Any] = {
+                "role": role,
+                "content": "\n".join([t for t in text_parts if t]).strip()
+                or "Please analyze this image.",
+            }
+            if images:
+                normalized_msg["images"] = images
+            normalized.append(normalized_msg)
+
+        return normalized
