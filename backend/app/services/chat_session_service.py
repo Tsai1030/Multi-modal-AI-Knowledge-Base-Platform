@@ -12,14 +12,16 @@ if TYPE_CHECKING:
     from app.repositories.message_repository import MessageRepository
     from app.repositories.session_repository import SessionRepository
 
+DEFAULT_SESSION_TITLE_PREFIX = "新對話 "
+
 
 class ChatSessionService:
     """Manages conversation session CRUD operations."""
 
     def __init__(
         self,
-        session_repo: SessionRepository,
-        message_repo: MessageRepository,
+        session_repo: "SessionRepository",
+        message_repo: "MessageRepository",
     ) -> None:
         self._session_repo = session_repo
         self._message_repo = message_repo
@@ -30,7 +32,7 @@ class ChatSessionService:
         query_mode: str = "hybrid",
     ) -> ChatSession:
         now = datetime.now(timezone.utc)
-        title = f"新對話 {now.strftime('%Y-%m-%d %H:%M')}"
+        title = f"{DEFAULT_SESSION_TITLE_PREFIX}{now.strftime('%Y-%m-%d %H:%M')}"
         return await self._session_repo.create({
             "user_id": user_id,
             "title": title,

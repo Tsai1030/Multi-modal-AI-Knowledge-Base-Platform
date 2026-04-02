@@ -80,7 +80,9 @@ class ChromaVectorDBStorage(BaseVectorStorage):
         for doc_id, payload in data.items():
             ids.append(doc_id)
             documents.append(payload.get("content", ""))
-            meta = {k: v for k, v in payload.items() if k not in ("content", "embedding")}
+            meta = self._sanitize_metadata({
+                k: v for k, v in payload.items() if k not in ("content", "embedding")
+            })
             metadatas.append(meta)
 
             if "embedding" in payload and payload["embedding"]:
@@ -208,3 +210,19 @@ class ChromaVectorDBStorage(BaseVectorStorage):
         if self.workspace:
             base = f"{self.workspace}_{base}"
         return f"{base}_{suffix}" if suffix else base
+
+    def _sanitize_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
+        sanitized: dict[str, Any] = {}
+        for key, value in metadata.items():
+            if value is None:
+                continue
+            if isinstance(value, list):
+                if not value:
+                    continue
+                sanitized[key] = value
+                continue
+            if isinstance(value, (str, bool, int, float)):
+                sanitized[key] = value
+                continue
+            sanitized[key] = str(value)
+        return sanitized

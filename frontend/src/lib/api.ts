@@ -1,6 +1,10 @@
 import axios from 'axios'
 import { useAuthStore } from '@/store/authStore'
-import type { DocumentListResponse } from '@/types/document'
+import type {
+  DocumentListResponse,
+  DocumentStatus,
+  DocumentUploadResponse,
+} from '@/types/document'
 import type {
   LoginRequest,
   RoleUpdateRequest,
@@ -90,10 +94,14 @@ export const sessionApi = {
     apiClient.post<ChatSession>('/api/v1/sessions/', data).then((r) => r.data),
 
   get: (sessionId: string) =>
-    apiClient.get<SessionDetailResponse>(`/api/v1/sessions/${sessionId}`).then((r) => r.data),
+    apiClient
+      .get<SessionDetailResponse>(`/api/v1/sessions/${sessionId}`)
+      .then((r) => r.data),
 
   rename: (sessionId: string, data: SessionRenameRequest) =>
-    apiClient.patch<ChatSession>(`/api/v1/sessions/${sessionId}/title`, data).then((r) => r.data),
+    apiClient
+      .patch<ChatSession>(`/api/v1/sessions/${sessionId}/title`, data)
+      .then((r) => r.data),
 
   delete: (sessionId: string) => apiClient.delete(`/api/v1/sessions/${sessionId}`),
 }
@@ -104,15 +112,25 @@ export const documentApi = {
       .get('/api/v1/documents/', { params: { skip, limit } })
       .then((r) => normalizeDocumentsResponse(r.data)),
 
-  upload: (file: File) => {
+  upload: (file: File, sessionId?: string) => {
     const form = new FormData()
     form.append('file', file)
+    if (sessionId) {
+      form.append('session_id', sessionId)
+    }
     return apiClient
-      .post('/api/v1/documents/upload', form, {
+      .post<DocumentUploadResponse>('/api/v1/documents/upload', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       .then((r) => r.data)
   },
+
+  getStatus: (docId: string) =>
+    apiClient
+      .get<{ id: string; status: DocumentStatus; error_message: string | null }>(
+        `/api/v1/documents/${docId}/status`
+      )
+      .then((r) => r.data),
 
   delete: (docId: string) => apiClient.delete(`/api/v1/documents/${docId}`),
 }

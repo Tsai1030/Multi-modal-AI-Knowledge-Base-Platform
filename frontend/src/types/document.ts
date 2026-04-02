@@ -17,3 +17,10 @@ export interface DocumentListResponse {
   documents: Document[]
   total: number
 }
+
+export interface DocumentUploadResponse {
+  id: string
+  title: string
+  status: DocumentStatus
+  created_at: string
+}

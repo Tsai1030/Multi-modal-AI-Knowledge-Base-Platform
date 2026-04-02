@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # RAG storage paths
     rag_working_dir: str = "./rag_storage"
     upload_dir: str = "./uploads"
+    rag_skip_entity_extraction: bool = True
 
     # Conversation settings
     conversation_max_history_turns: int = 20

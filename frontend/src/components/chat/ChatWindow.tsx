@@ -138,7 +138,12 @@ export function ChatWindow({ sessionId }: ChatWindowProps) {
         </div>
       </div>
 
-      <InputBar onSubmit={handleSubmit} isStreaming={isStreaming} queryMode={queryMode} />
+      <InputBar
+        sessionId={sessionId}
+        onSubmit={handleSubmit}
+        isStreaming={isStreaming}
+        queryMode={queryMode}
+      />
     </div>
   )
 }

@@ -1,14 +1,20 @@
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, status
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
+from app.core.exceptions import AuthorizationError, NotFoundError
+from app.models.message import MessageRole
 from app.config import settings
 from app.models.user import User
 from app.rag.engine import RAGEngine
 from app.repositories.document_repository import DocumentRepository
+from app.repositories.message_repository import MessageRepository
+from app.repositories.session_repository import SessionRepository
 from app.schemas.document import DocumentListResponse, DocumentStatusResponse, DocumentUploadResponse
 from app.services.document_service import DocumentService
 
@@ -27,6 +33,8 @@ def _get_document_service(db: AsyncSession = Depends(get_db)) -> DocumentService
 async def upload_document(
     file: UploadFile,
     background_tasks: BackgroundTasks,
+    session_id: UUID | None = Form(default=None),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     doc_service: DocumentService = Depends(_get_document_service),
 ) -> DocumentUploadResponse:
@@ -40,6 +48,27 @@ async def upload_document(
         mime_type=file.content_type or "application/octet-stream",
         uploader_id=current_user.id,
     )
+
+    if session_id is not None:
+        session_repo = SessionRepository(db)
+        message_repo = MessageRepository(db)
+        session = await session_repo.get_by_id(session_id)
+        if session is None:
+            raise NotFoundError(f"Session {session_id} not found")
+        if session.user_id != current_user.id:
+            raise AuthorizationError("Access denied to this session")
+
+        await message_repo.create({
+            "session_id": session_id,
+            "role": MessageRole.system,
+            "content": (
+                f'[[document-upload]]{{"document_id":"{doc.id}","file_name":"{doc.original_filename}"}}'
+            ),
+        })
+        await session_repo.increment_message_count(session_id)
+        await session_repo.update_last_message(session_id, datetime.now(timezone.utc))
+
+    await db.commit()
     background_tasks.add_task(doc_service.process_document_background, doc.id)
     return doc
 

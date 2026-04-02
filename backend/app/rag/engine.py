@@ -101,6 +101,18 @@ class RAGEngine:
         if not init_result.get("success"):
             raise RuntimeError(init_result.get("error", "Failed to initialize LightRAG"))
 
+        if settings.rag_skip_entity_extraction:
+            async def _skip_extract_entities(_self, chunk, pipeline_status=None, pipeline_status_lock=None):
+                return []
+
+            cls._rag_instance.lightrag._process_extract_entities = _skip_extract_entities.__get__(
+                cls._rag_instance.lightrag,
+                type(cls._rag_instance.lightrag),
+            )
+            logger.warning(
+                "RAG skip entity extraction is enabled; indexing uses chunk vectors only."
+            )
+
         logger.info("RAGEngine initialized successfully")
 
     @classmethod

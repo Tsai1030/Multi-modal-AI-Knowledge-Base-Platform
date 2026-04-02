@@ -13,25 +13,22 @@ if TYPE_CHECKING:
     from app.repositories.message_repository import MessageRepository
     from app.repositories.session_repository import SessionRepository
 
-_SYSTEM_CONTENT = (
-    "你是一個知識庫助理，請根據提供的對話歷史和知識庫內容，準確、有條理地回答用戶的問題。"
+DEFAULT_SESSION_TITLE_PREFIX = "新對話 "
+DOCUMENT_UPLOAD_PREFIX = "[[document-upload]]"
+SYSTEM_CONTENT = (
+    "你是 RAG 知識庫助理。回答時優先根據已檢索到的文件內容作答，"
+    "若資料不足請明確說明不知道，不要假裝讀過不存在的內容。"
 )
 
 
 class ConversationService:
-    """Manages multi-turn conversation state for a single session.
-
-    Responsibilities: context assembly, compact triggering, message persistence.
-
-    NOTE: rag.aquery() must receive this context via conversation_history= parameter
-    (NOT history_messages=). See STEP 3 decision log.
-    """
+    """Manages multi-turn conversation state for a single session."""
 
     def __init__(
         self,
-        session_repo: SessionRepository,
-        message_repo: MessageRepository,
-        compactor: ConversationCompactor,
+        session_repo: "SessionRepository",
+        message_repo: "MessageRepository",
+        compactor: "ConversationCompactor",
     ) -> None:
         self._session_repo = session_repo
         self._message_repo = message_repo
@@ -42,16 +39,7 @@ class ConversationService:
         session_id: uuid.UUID,
         current_question: str,
     ) -> list[dict]:
-        """Assemble conversation history for injection into RAG-Anything.
-
-        Returns a list of {role, content} dicts to be passed as:
-            await rag.aquery(query, param=QueryParam(conversation_history=context))
-
-        Flow:
-        1. Fetch recent messages (up to compact_threshold) from DB
-        2. Compact if session.message_count >= threshold
-        3. Assemble [system, summary(optional), ...history, current_question]
-        """
+        """Assemble conversation history for injection into RAG-Anything."""
         session = await self._session_repo.get_by_id(session_id)
         if session is None:
             raise NotFoundError(f"Session not found: {session_id}")
@@ -63,19 +51,20 @@ class ConversationService:
         summary: str | None = session.compact_summary
         if self._compactor.should_compact(session.message_count):
             summary = await self._execute_compact(session_id, messages)
-            # Fetch compact_target+1 to account for the summary marker inserted in DB.
-            # The marker (is_compacted_summary=True) is filtered during context assembly.
             messages = await self._message_repo.get_recent_by_session(
                 session_id, self._compactor.compact_target + 1
             )
 
-        history: list[dict] = [{"role": "system", "content": _SYSTEM_CONTENT}]
+        history: list[dict] = [{"role": "system", "content": SYSTEM_CONTENT}]
         if summary:
             history.append({"role": "assistant", "content": summary})
 
         for msg in messages:
-            if not msg.is_compacted_summary:
-                history.append({"role": msg.role.value, "content": msg.content})
+            if msg.is_compacted_summary:
+                continue
+            if msg.role == MessageRole.system and msg.content.startswith(DOCUMENT_UPLOAD_PREFIX):
+                continue
+            history.append({"role": msg.role.value, "content": msg.content})
 
         history.append({"role": "user", "content": current_question})
         return history
@@ -122,14 +111,6 @@ class ConversationService:
         session_id: uuid.UUID,
         messages: list[Message],
     ) -> str:
-        """Compress old messages and persist the summary.
-
-        Steps:
-        1. Summarise old messages via LLM (keeps most recent compact_target msgs)
-        2. Delete compressed messages from DB
-        3. Insert a summary marker message (role=system, is_compacted_summary=True)
-        4. Update session.compact_summary and is_compacted
-        """
         summary, msgs_to_keep = await self._compactor.compact(
             messages, keep_last_n=self._compactor.compact_target
         )
@@ -155,8 +136,7 @@ class ConversationService:
         session_id: uuid.UUID,
         first_user_message: str,
     ) -> None:
-        """Set session title from first 20 chars of first user message if still default."""
         session = await self._session_repo.get_by_id(session_id)
-        if session is None or not session.title.startswith("新對話"):
+        if session is None or not session.title.startswith(DEFAULT_SESSION_TITLE_PREFIX):
             return
         await self._session_repo.update_title(session_id, first_user_message[:20])
