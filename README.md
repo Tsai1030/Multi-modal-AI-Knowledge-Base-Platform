@@ -21,6 +21,21 @@
 - 系統記憶體至少 **16 GB RAM**，顯示卡至少 **8 GB VRAM**（GPU 可選，但強烈建議）
 - 首次啟動需穩定網路連線（需下載約 5 GB 的模型權重）
 
+> **⚠️ 重要：啟動前請先設定環境變數**
+>
+> 複製範本並填入實際設定：
+> ```bash
+> cp backend/.env.docker.example backend/.env.docker
+> ```
+> 然後編輯 `backend/.env.docker`，**務必將 `SECRET_KEY` 改為隨機字串**（用於 JWT 簽名，預設值不安全）：
+> ```
+> SECRET_KEY=your-random-secret-key-at-least-32-characters
+> ```
+> 可用以下指令產生隨機 key：
+> ```bash
+> openssl rand -hex 32
+> ```
+
 ---
 
 ### 第一次啟動（含建置映像檔 + 下載模型）
