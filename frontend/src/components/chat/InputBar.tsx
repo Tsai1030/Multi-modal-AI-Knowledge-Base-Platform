@@ -88,7 +88,7 @@ export function InputBar({
   }
 
   return (
-    <div className="border-t border-border bg-background px-4 py-3">
+    <div className="bg-background px-4 py-3">
       <input
         ref={fileInputRef}
         type="file"
@@ -96,7 +96,8 @@ export function InputBar({
         onChange={handleFileChange}
         accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.md,.txt,.jpg,.jpeg,.png"
       />
-      <div className="relative flex items-end gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
+      <div className="mx-auto max-w-3xl">
+      <div className="relative flex items-end gap-2 rounded-2xl border border-border bg-muted/30 px-3 py-2 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
         <Textarea
           ref={textareaRef}
           placeholder="輸入問題，Enter 送出，Shift+Enter 換行"
@@ -134,8 +135,10 @@ export function InputBar({
         </div>
       </div>
       <p className="mt-1.5 text-center text-xs text-muted-foreground/50">
-        支援 PDF、Office、Markdown、文字與圖片檔，上傳後完成索引即可在此對話引用。
+        <span className="sm:hidden">支援 PDF、Office、圖片等格式</span>
+        <span className="hidden sm:inline">支援 PDF、Office、Markdown、文字與圖片檔，上傳後完成索引即可在此對話引用。</span>
       </p>
+      </div>
     </div>
   )
 }

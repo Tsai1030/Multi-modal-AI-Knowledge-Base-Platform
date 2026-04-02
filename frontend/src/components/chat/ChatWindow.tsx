@@ -106,8 +106,11 @@ export function ChatWindow({ sessionId }: ChatWindowProps) {
   )
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+    <div className="relative flex h-full flex-col">
+      <span className="fixed inset-x-0 top-0 z-10 flex h-14 items-center bg-background px-14 text-sm font-semibold tracking-wide text-foreground md:absolute md:inset-x-auto md:left-4 md:top-4 md:h-auto md:bg-transparent md:px-0">
+        Multi-modal AI
+      </span>
+      <div className="flex-1 overflow-y-auto px-4 py-6 pt-20 md:pt-6">
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
           {sessionMessages.length === 0 && !isStreaming && (
             <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
