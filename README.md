@@ -40,6 +40,9 @@ docker compose exec ollama ollama pull gpt-oss:latest
 #   視覺模型（用於多模態文件解析）
 docker compose exec ollama ollama pull llava:7b
 
+#   嵌入模型（文件向量化，走 GPU）
+docker compose exec ollama ollama pull bge-m3
+
 # 步驟 4：確認所有容器狀態正常
 docker compose ps
 ```
@@ -65,6 +68,23 @@ rag_test-frontend-1         running     0.0.0.0:3000->3000/tcp
 | API 文件    | http://localhost:8000/docs |
 | ChromaDB   | http://localhost:8001      |
 | Ollama     | http://localhost:11434     |
+
+---
+
+### 首次上傳文件注意事項
+
+> **請耐心等待** — 第一次上傳文件時，系統需要完成以下工作：
+>
+> 1. **MinerU 下載解析模型**（首次約 10–30 分鐘）：版面偵測、OCR 等 AI 模型需從網路下載，總計約 2 GB，下載期間後端日誌不會有進度輸出，這是正常現象。
+> 2. **文字 Embedding 向量化**：文件解析完成後，透過 Ollama bge-m3 模型將文字轉換為向量並存入 ChromaDB。
+>
+> **第二次以後上傳**：MinerU 模型已快取，處理速度會明顯加快。
+>
+> 可透過以下指令觀察處理進度：
+> ```bash
+> docker compose logs -f backend
+> ```
+> 看到 `Document ... processing complete!` 即表示成功。
 
 ---
 
@@ -106,7 +126,7 @@ rm -rf backend/data backend/uploads backend/rag_storage data/
 |------|------|:----------:|:---------------:|------|
 | 大型語言模型 | `gpt-oss:latest` | ~8 GB | ~8 GB | 主要對話與推理模型 |
 | 視覺模型 | `llava:7b` | ~6 GB | ~6 GB | 圖片與多模態文件解析 |
-| 嵌入模型 | `BAAI/bge-m3` | ~2 GB | ~2 GB | 1024 維度文字向量化 |
+| 嵌入模型 | `bge-m3`（Ollama） | ~2 GB | ~2 GB | 1024 維度文字向量化，由 Ollama 統一管理 |
 | ChromaDB | — | ~1 GB | — | 向量儲存（僅 CPU） |
 | 後端 + 前端 | — | ~1 GB | — | 應用程式執行環境 |
 
@@ -188,6 +208,7 @@ Step 7+：複雜功能（Codex）→ Session Bug 修復 → Docker 環境設定
 │                    │  Port: 11434     │                            │
 │                    │  gpt-oss:latest  │                            │
 │                    │  llava:7b        │                            │
+│                    │  bge-m3          │                            │
 │                    └──────────────────┘                            │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -245,7 +266,7 @@ backend/
 │   ├── rag/                     # RAG 引擎層
 │   │   ├── engine.py            # RAGEngine 單例：應用啟動時初始化 LightRAG + 所有適配器
 │   │   ├── llm_adapter.py       # OllamaLLMAdapter：封裝 /api/chat（串流 + 非串流）
-│   │   ├── embedding_adapter.py # BGEEmbeddingAdapter：BAAI/bge-m3（1024 維度）
+│   │   ├── embedding_adapter.py # OllamaEmbeddingAdapter：透過 Ollama /api/embed（bge-m3，GPU）
 │   │   ├── chroma_adapter.py    # ChromaVectorDBStorage：實作 LightRAG BaseVectorStorage 介面
 │   │   └── conversation_compactor.py  # 對話歷史超過閾值時，透過 LLM 壓縮舊訊息
 │   │
@@ -310,7 +331,7 @@ RAGEngine（單例）
     ├── RAGAnything（基於 LightRAG）
     │       ├── OllamaLLMAdapter       → Ollama gpt-oss:latest  （對話 + 推理）
     │       ├── OllamaVisionAdapter    → Ollama llava:7b         （圖片說明生成）
-    │       ├── BGEEmbeddingAdapter    → BAAI/bge-m3             （1024 維向量嵌入）
+    │       ├── OllamaEmbeddingAdapter → Ollama bge-m3            （1024 維向量嵌入，GPU）
     │       └── ChromaVectorDBStorage  → ChromaDB :8001          （向量搜尋）
     │
     └── 文件處理流水線
@@ -415,7 +436,83 @@ frontend/src/
 
 ---
 
-### 4.4 資料庫結構
+### 4.4 資料庫設計
+
+#### 技術選型
+
+| 項目 | 選擇 | 說明 |
+|------|------|------|
+| 資料庫引擎 | SQLite | 輕量、無需額外服務、資料存於 `/app/data/rag_platform.db` |
+| ORM | SQLAlchemy 2.x（AsyncSession） | 全非同步操作，搭配 `aiosqlite` 驅動 |
+| 遷移工具 | Alembic | 版本化 Schema 管理，啟動時自動執行 |
+| 主鍵格式 | UUID | 所有資料表使用 UUID 作為主鍵，避免 ID 可猜測性 |
+
+---
+
+#### 資料表設計
+
+**users — 使用者帳號**
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | UUID，PK | 使用者唯一識別碼 |
+| email | String(255)，唯一索引 | 登入帳號，不可重複 |
+| hashed_password | String(255) | bcrypt 雜湊，12 rounds |
+| full_name | String(255) | 顯示名稱 |
+| role | Enum(admin, user) | 權限角色，預設 user |
+| is_active | Boolean | 帳號啟用狀態，預設 true |
+| created_at / updated_at | DateTime | 建立與更新時間戳記 |
+
+**documents — 上傳文件**
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | UUID，PK | 文件唯一識別碼 |
+| title | String(512) | 文件標題（預設為原始檔名） |
+| original_filename | String(512) | 原始上傳檔名 |
+| stored_filename | String(512) | 儲存於磁碟的實際檔名（UUID 命名，避免衝突） |
+| file_path | String(1024) | 完整檔案路徑 |
+| file_size | Integer | 檔案大小（bytes） |
+| mime_type | String(128) | MIME 類型（application/pdf 等） |
+| status | Enum | pending → processing → completed / failed |
+| error_message | Text，可空 | 處理失敗時的錯誤訊息 |
+| uploaded_by_id | UUID，FK → users | 上傳者，cascade delete |
+| rag_doc_id | String(512)，可空 | LightRAG 內部文件 ID，用於向量刪除 |
+| created_at | DateTime | 上傳時間 |
+
+**chat_sessions — 對話 Session**
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | UUID，PK | Session 唯一識別碼 |
+| user_id | UUID，FK → users | 所屬使用者，cascade delete |
+| title | String(512) | Session 名稱，預設「新對話」，首次提問後自動更新 |
+| query_mode | String(32) | 查詢模式：hybrid / local / global |
+| message_count | Integer | 訊息總數，用於觸發對話壓縮判斷 |
+| last_message_at | DateTime，可空 | 最後一則訊息的時間，用於側欄排序 |
+| is_compacted | Boolean | 是否已執行過對話歷史壓縮 |
+| compact_summary | Text，可空 | 壓縮摘要內容，由 LLM 生成 |
+| created_at | DateTime | 建立時間 |
+
+**messages — 對話訊息**
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | UUID，PK | 訊息唯一識別碼 |
+| session_id | UUID，FK → chat_sessions | 所屬 Session，cascade delete |
+| role | Enum(user, assistant, system) | 訊息角色 |
+| content | Text | 訊息內容 |
+| token_count | Integer，可空 | 預估 token 數量 |
+| is_compacted_summary | Boolean | 是否為對話壓縮摘要訊息 |
+| rag_sources | Text，可空 | JSON 陣列，記錄 RAG 檢索來源 |
+| query_mode | String(32)，可空 | 該次查詢使用的模式 |
+| created_at | DateTime | 訊息時間戳記 |
+
+> **複合索引**：`messages` 資料表在 `(session_id, created_at)` 上建立複合索引，加速按 Session 排序查詢。
+
+---
+
+#### 資料表關聯圖
 
 ```
 ┌────────────────────┐         ┌───────────────────────┐
@@ -469,6 +566,38 @@ frontend/src/
 │ query_mode         │
 │ created_at         │
 └────────────────────┘
+```
+
+#### Repository 資料存取層
+
+所有資料庫操作透過 Repository 模式封裝，Service 層不直接使用 SQLAlchemy Session：
+
+```
+BaseRepository（通用 CRUD）
+    ├── get_by_id(id)           → 單筆查詢
+    ├── get_all(skip, limit)    → 分頁列表
+    ├── create(data_dict)       → 新增記錄
+    ├── update(id, data_dict)   → 更新欄位
+    └── delete(id)              → 刪除記錄
+
+UserRepository
+    └── get_by_email(email)     → 登入查詢
+
+DocumentRepository
+    ├── get_by_uploader(user_id)           → 使用者文件列表
+    ├── update_status(id, status, error)   → 更新處理狀態
+    └── get_docs_by_status(status)         → 依狀態篩選
+
+SessionRepository
+    ├── get_by_user(user_id)               → 使用者 Session 列表
+    ├── increment_message_count(id)        → 訊息計數 +1
+    ├── update_last_message(id, timestamp) → 更新最後訊息時間
+    ├── update_title(id, title)            → 重命名
+    └── update_compact_data(id, summary)   → 儲存壓縮摘要
+
+MessageRepository
+    ├── get_by_session(session_id)         → 取得所有訊息
+    └── get_recent_by_session(id, limit)   → 取得最近 N 則（對話歷史組裝用）
 ```
 
 ---
@@ -537,9 +666,85 @@ frontend/src/
 | Local（局部） | 聚焦文件片段 | 單份文件深度追問 |
 | Global（全域） | 全域知識圖譜遍歷 | 跨文件摘要與綜合分析 |
 
-#### 對話歷史壓縮機制
+#### 多輪對話壓縮機制（Conversation Compaction）
 
-當對話訊息數超過 15 則時，系統自動透過 LLM 將較舊的訊息進行摘要壓縮，保留最近 6 則訊息不動。此機制在保持對話連貫性的同時，避免 LLM Context 溢位。
+##### 設計動機
+
+LLM 的 Context Window 有限，隨著對話輪數增加，若將所有歷史訊息全部送入 LLM，會導致：
+- 超出 Context Window 上限，造成截斷或錯誤
+- 輸入 token 暴增，推理速度下降、成本上升
+
+本系統設計了一套**自動對話壓縮機制**，在不中斷使用者對話體驗的前提下，維持 Context 在可控範圍內。
+
+##### 觸發條件與參數
+
+| 參數 | 預設值 | 說明 |
+|------|:------:|------|
+| `conversation_compact_threshold` | 15 | 訊息數達到此值時觸發壓縮 |
+| `conversation_compact_target` | 6 | 壓縮後保留最近幾則訊息不動 |
+| `conversation_max_history_turns` | 20 | 組裝對話歷史時最多取幾則 |
+
+##### 壓縮流程
+
+```
+每次使用者提問時，ConversationService 檢查 session.message_count
+
+message_count < 15
+    ↓
+直接取最近 N 則訊息組成 history，送入 RAG 查詢
+
+message_count >= 15（觸發壓縮）
+    ↓
+取出所有訊息，分為兩組：
+    ├── 較舊的訊息（全部 - 最近 6 則）→ 送入 LLM 生成摘要
+    └── 最近 6 則訊息 → 原文保留
+
+    ↓
+刪除「較舊的訊息」（從 messages 資料表）
+    ↓
+將摘要儲存為 system role 訊息（is_compacted_summary = True）
+    ↓
+將摘要同步寫入 chat_sessions.compact_summary 欄位
+    ↓
+組裝 history：[system prompt] + [摘要] + [最近 6 則] + [當前問題]
+```
+
+##### 壓縮 Prompt（中文摘要）
+
+```
+以下是一段對話的歷史紀錄，請將其整理成一段簡潔的摘要，
+保留所有重要的問題、答案與關鍵資訊，以繁體中文回答：
+
+{conversation_history}
+
+請以「對話摘要：」開頭，輸出摘要內容。
+```
+
+##### 對話歷史組裝規則
+
+送入 LLM 的 `history` 陣列按以下順序組裝，並過濾掉不應暴露給 LLM 的訊息：
+
+```python
+history = [
+    {"role": "system", "content": "你是 RAG 知識庫助理..."},  # 固定系統提示
+    {"role": "assistant", "content": compact_summary},          # 壓縮摘要（若存在）
+    # 過濾掉：is_compacted_summary = True 的舊摘要訊息
+    # 過濾掉：[[document-upload]] 開頭的文件上傳通知訊息
+    {"role": "user",      "content": "..."},                    # 保留的對話訊息
+    {"role": "assistant", "content": "..."},
+    ...
+    {"role": "user",      "content": current_question},         # 當前問題
+]
+```
+
+##### Token 估算
+
+```python
+def estimate_tokens(text: str) -> int:
+    # 中文約 0.5 token/字，英文約 0.25 token/字
+    # 以 len // 3 作為保守粗估
+    return len(text) // 3
+```
 
 #### Session 範圍文件檢索
 

@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     ollama_llm_model: str = "gpt-oss:latest"
     ollama_vision_model: str = "llava:latest"
 
-    # Embedding
-    embedding_model_name: str = "BAAI/bge-m3"
+    # Embedding (via Ollama)
+    ollama_embedding_model: str = "bge-m3"
     embedding_dim: int = 1024
 
     # RAG storage paths

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from raganything import RAGAnything, RAGAnythingConfig
 
 from app.rag.chroma_adapter import ChromaVectorDBStorage
-from app.rag.embedding_adapter import BGEEmbeddingAdapter
+from app.rag.embedding_adapter import OllamaEmbeddingAdapter
 from app.rag.llm_adapter import OllamaLLMAdapter, OllamaVisionAdapter
 
 if TYPE_CHECKING:
@@ -43,7 +43,7 @@ class RAGEngine:
     _rag_instance: RAGAnything | None = None
     _llm_adapter: OllamaLLMAdapter | None = None
     _vision_adapter: OllamaVisionAdapter | None = None
-    _embedding_adapter: BGEEmbeddingAdapter | None = None
+    _embedding_adapter: OllamaEmbeddingAdapter | None = None
 
     @classmethod
     async def initialize(cls, settings: Settings) -> None:
@@ -69,15 +69,12 @@ class RAGEngine:
             model=settings.ollama_vision_model,
             llm_adapter=cls._llm_adapter,
         )
-        import torch
-        embedding_device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info("Embedding device: %s", embedding_device)
-        cls._embedding_adapter = BGEEmbeddingAdapter(
-            model_name=settings.embedding_model_name,
-            device=embedding_device,
+        cls._embedding_adapter = OllamaEmbeddingAdapter(
+            base_url=settings.ollama_base_url,
+            model=settings.ollama_embedding_model,
         )
 
-        logger.info("Pre-warming embedding model (first run may take a few minutes)...")
+        logger.info("Pre-warming embedding model via Ollama...")
         await cls._embedding_adapter.embed(["warmup"])
         logger.info("Embedding model ready")
 
