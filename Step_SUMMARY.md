@@ -301,3 +301,66 @@
 ## 驗證結果
 - 23 個 Conversation 測試通過（`uv run pytest tests/test_conversation.py -v`）
 - 51 個測試全數通過（23 conversation + 16 RAG adapter + 12 auth）
+
+---
+
+# STEP 5 — 文件上傳與 RAG 處理 API 完成摘要
+
+## 完成項目
+
+### 1. `schemas/document.py` — 三個 Pydantic 回應 Schema
+
+| Schema | 欄位 | 用途 |
+|--------|------|------|
+| `DocumentUploadResponse` | id, title, status, created_at | POST /upload 202 回應 |
+| `DocumentListResponse` | id, title, original_filename, file_size, mime_type, status, error_message, uploaded_by_id, created_at, updated_at | GET / 與 GET /{id} |
+| `DocumentStatusResponse` | id, status, error_message | GET /{id}/status |
+
+### 2. `services/document_service.py` — DocumentService
+
+| 方法 | 說明 |
+|------|------|
+| `validate_file(file)` | 驗證副檔名（11 種允許）與大小（上限 50 MB） |
+| `save_file(file)` | 儲存至 `upload_dir/{uuid}{ext}`，回傳 (stored_filename, file_path, file_size) |
+| `create_document_record(...)` | 建立 Document 記錄，status=pending，title 取自原始檔名 stem |
+| `process_document_background(doc_id)` | BackgroundTask：建立獨立 DB session，更新狀態 processing → completed/failed，儲存 rag_doc_id |
+| `list_documents(user, skip, limit)` | Admin 看全部；一般用戶看自己上傳的 |
+| `get_document(doc_id, user)` | NotFoundError / AuthorizationError 對應 404 / 403 |
+| `delete_document(doc_id, user)` | 依序：刪向量（adelete_by_doc_id）→ 刪檔案 → 刪 DB 記錄 |
+
+**關鍵實作細節**：
+- `AsyncSessionFactory` 必須在模組頂層 import（非函式內），才能被 `patch()` 正確替換
+- `process_document_complete(file_path, output_dir, doc_id=...)` 回傳 None；UUID 由 service 自行生成後存入 `rag_doc_id`
+- 刪向量透過 `self._rag.lightrag.adelete_by_doc_id(rag_doc_id)`
+
+### 3. `api/v1/documents.py` — 5 個 REST 端點
+
+| 端點 | 方法 | Status | 說明 |
+|------|------|--------|------|
+| `/documents/upload` | POST | 202 | 上傳檔案，BackgroundTasks 觸發 RAG 處理 |
+| `/documents/` | GET | 200 | 列出文件（分頁） |
+| `/documents/{doc_id}` | GET | 200 | 取得單一文件詳情 |
+| `/documents/{doc_id}/status` | GET | 200 | 查詢處理狀態 |
+| `/documents/{doc_id}` | DELETE | 204 | 刪除文件（含向量與檔案） |
+
+`_get_document_service` 為公開函式，供測試 override 使用。
+
+### 4. `tests/test_documents.py` — 14 個測試全數通過 ✅
+
+| 分類 | 測試數 | 測試重點 |
+|------|--------|---------|
+| Upload | 4 | 成功 202、副檔名不允許 422、超過大小 422、無 token 401 |
+| Status query | 3 | 上傳後 pending、狀態轉換（直接更新 DB 驗證）、不存在 404 |
+| List & detail | 2 | 只看自己的文件、他人文件 403 |
+| Delete | 3 | owner 刪除 204、他人 403、admin 可刪任意文件 204 |
+| Background task unit | 2 | 成功路徑（更新 completed + rag_doc_id）、失敗路徑（更新 failed + error） |
+
+**測試策略**：
+- `doc_client` fixture 使用 `patch.object(DocumentService, "process_document_background", new=AsyncMock)` 跳過真實 RAG
+- 狀態轉換測試直接呼叫 `doc_repo.update_status()` 操作測試 DB，再透過 API 驗證
+- Admin 測試透過 `db_session.execute(update(User).values(role=UserRole.admin))` 在測試 DB 提升權限
+- Background task 單元測試以 module-level patch 替換 `AsyncSessionFactory` 與 `DocumentRepository`
+
+## 驗證結果
+- 14 個 Document 測試通過（`uv run pytest tests/test_documents.py -v`）
+- 65 個測試全數通過（14 document + 23 conversation + 16 RAG adapter + 12 auth）

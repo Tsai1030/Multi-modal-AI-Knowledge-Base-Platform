@@ -12,6 +12,7 @@ dependencies = [
     "chromadb>=1.5.5",
     "fastapi>=0.135.2",
     "httpx>=0.28.1",
+    "mineru[core]>=2.0.6",
     "passlib[bcrypt]>=1.7.4",
     "pydantic-settings>=2.13.1",
     "pydantic[email]>=2.12.5",

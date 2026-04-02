@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import admin, auth
+from app.api.v1 import admin, auth, documents
 from app.config import settings
 from app.core.exceptions import (
     AppBaseException,
@@ -54,6 +54,7 @@ async def app_exception_handler(request: Request, exc: AppBaseException) -> JSON
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(documents.router, prefix="/api/v1")
 
 
 @app.get("/")
