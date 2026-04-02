@@ -9,8 +9,8 @@
 1. [啟動步驟](#1-啟動步驟)
 2. [硬體需求](#2-硬體需求)
 3. [AI 工具使用說明](#3-ai-工具使用說明)
-4. [系統架構](#4-系統架構)
-5. [介面截圖](#5-介面截圖)
+4. [介面截圖](#4-介面截圖)
+5. [系統架構](#5-系統架構)
 
 ---
 
@@ -203,9 +203,59 @@ Step 7+：複雜功能（Codex）→ Session Bug 修復 → Docker 環境設定
 
 ---
 
-## 4. 系統架構
+## 4. 介面截圖
 
-### 4.1 高層架構圖
+### 首頁（Landing）
+
+> 系統首頁，提供登入與註冊入口。
+
+![Landing Page](public/landing.png)
+
+---
+
+### 登入頁（Login）
+
+> 使用電子郵件 + 密碼登入，取得 JWT Token。
+
+![Login Page](public/login.png)
+
+---
+
+### 註冊頁（Sign Up）
+
+> 建立新帳號，填寫姓名、電子郵件與密碼。
+
+![Sign Up Page](public/sign.png)
+
+---
+
+### 對話首頁（Home）
+
+> 登入後的主畫面，左側顯示歷史 Session 列表，中間選擇查詢模式（Hybrid / Local / Global）開始新對話。
+
+![Home Page](public/home.png)
+
+---
+
+### 文件管理（Documents）
+
+> 上傳並管理知識庫文件，支援 PDF、DOCX、PPTX、XLSX、MD、TXT、JPG、PNG 等格式。上傳後系統自動解析並向量化存入 ChromaDB。
+
+![Documents Page](public/documents.png)
+
+---
+
+### 對話介面（Session）
+
+> 多輪對話畫面，支援串流輸出、引用來源顯示，以及多輪歷史壓縮。
+
+![Session Page](public/session.png)
+
+---
+
+## 5. 系統架構
+
+### 5.1 高層架構圖
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -231,7 +281,7 @@ Step 7+：複雜功能（Codex）→ Session Bug 修復 → Docker 環境設定
 
 ---
 
-### 4.2 後端架構
+### 5.2 後端架構
 
 ```
 backend/
@@ -358,7 +408,7 @@ RAGEngine（單例）
 
 ---
 
-### 4.3 前端架構
+### 5.3 前端架構
 
 ```
 frontend/src/
@@ -452,7 +502,7 @@ frontend/src/
 
 ---
 
-### 4.4 資料庫設計
+### 5.4 資料庫設計
 
 #### 技術選型
 
@@ -618,7 +668,7 @@ MessageRepository
 
 ---
 
-### 4.5 API 端點總覽
+### 5.5 API 端點總覽
 
 #### 驗證
 | 方法 | 端點 | 說明 |
@@ -661,7 +711,7 @@ MessageRepository
 
 ---
 
-### 4.6 核心功能說明
+### 5.6 核心功能說明
 
 #### 多模態文件支援
 
@@ -768,7 +818,7 @@ def estimate_tokens(text: str) -> int:
 
 ---
 
-### 4.7 基礎設施（Docker Compose）
+### 5.7 基礎設施（Docker Compose）
 
 ```
 docker-compose.yml
@@ -800,51 +850,4 @@ docker-compose.yml
 
 ---
 
-## 5. 介面截圖
-
-### 首頁（Landing）
-
-> 系統首頁，提供登入與註冊入口。
-
-![Landing Page](public/landing.png)
-
----
-
-### 登入頁（Login）
-
-> 使用電子郵件 + 密碼登入，取得 JWT Token。
-
-![Login Page](public/login.png)
-
----
-
-### 註冊頁（Sign Up）
-
-> 建立新帳號，填寫姓名、電子郵件與密碼。
-
-![Sign Up Page](public/sign.png)
-
----
-
-### 對話首頁（Home）
-
-> 登入後的主畫面，左側顯示歷史 Session 列表，中間選擇查詢模式（Hybrid / Local / Global）開始新對話。
-
-![Home Page](public/home.png)
-
----
-
-### 文件管理（Documents）
-
-> 上傳並管理知識庫文件，支援 PDF、DOCX、PPTX、XLSX、MD、TXT、JPG、PNG 等格式。上傳後系統自動解析並向量化存入 ChromaDB。
-
-![Documents Page](public/documents.png)
-
----
-
-### 對話介面（Session）
-
-> 多輪對話畫面，支援串流輸出、引用來源顯示，以及多輪歷史壓縮。
-
-![Session Page](public/session.png)
 
