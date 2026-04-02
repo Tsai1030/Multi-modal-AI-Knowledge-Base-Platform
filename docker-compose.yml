@@ -15,6 +15,13 @@
       - "11434:11434"
     volumes:
       - ./data/ollama:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "ollama list > /dev/null 2>&1"]
       interval: 10s
@@ -40,6 +47,13 @@
       - ./backend/data:/app/data
       - ./backend/uploads:/app/uploads
       - ./backend/rag_storage:/app/rag_storage
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
       interval: 10s

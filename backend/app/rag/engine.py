@@ -69,9 +69,17 @@ class RAGEngine:
             model=settings.ollama_vision_model,
             llm_adapter=cls._llm_adapter,
         )
+        import torch
+        embedding_device = "cuda" if torch.cuda.is_available() else "cpu"
+        logger.info("Embedding device: %s", embedding_device)
         cls._embedding_adapter = BGEEmbeddingAdapter(
             model_name=settings.embedding_model_name,
+            device=embedding_device,
         )
+
+        logger.info("Pre-warming embedding model (first run may take a few minutes)...")
+        await cls._embedding_adapter.embed(["warmup"])
+        logger.info("Embedding model ready")
 
         config = RAGAnythingConfig(
             working_dir=settings.rag_working_dir,
