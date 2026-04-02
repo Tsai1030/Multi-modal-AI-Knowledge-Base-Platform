@@ -1,10 +1,26 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from typing import Any
 
 import chromadb
 from lightrag.base import BaseVectorStorage
+
+_ALLOWED_FULL_DOC_IDS: ContextVar[set[str] | None] = ContextVar(
+    "allowed_full_doc_ids",
+    default=None,
+)
+
+
+@contextmanager
+def scoped_allowed_full_doc_ids(full_doc_ids: set[str] | None):
+    token: Token[set[str] | None] = _ALLOWED_FULL_DOC_IDS.set(full_doc_ids)
+    try:
+        yield
+    finally:
+        _ALLOWED_FULL_DOC_IDS.reset(token)
 
 
 @dataclass
@@ -122,10 +138,22 @@ class ChromaVectorDBStorage(BaseVectorStorage):
         if query_embedding is None:
             query_embedding = (await self.embedding_func([query]))[0]
 
+        where_clause: dict[str, Any] | None = None
+        allowed_full_doc_ids = _ALLOWED_FULL_DOC_IDS.get()
+        if allowed_full_doc_ids is not None:
+            if not allowed_full_doc_ids:
+                return []
+            if len(allowed_full_doc_ids) == 1:
+                only_doc_id = next(iter(allowed_full_doc_ids))
+                where_clause = {"full_doc_id": only_doc_id}
+            else:
+                where_clause = {"full_doc_id": {"$in": sorted(allowed_full_doc_ids)}}
+
         results = await self._collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
             include=["documents", "metadatas", "distances"],
+            where=where_clause,
         )
 
         output: list[dict[str, Any]] = []

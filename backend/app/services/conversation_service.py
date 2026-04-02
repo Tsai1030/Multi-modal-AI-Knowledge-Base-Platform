@@ -140,3 +140,33 @@ class ConversationService:
         if session is None or not session.title.startswith(DEFAULT_SESSION_TITLE_PREFIX):
             return
         await self._session_repo.update_title(session_id, first_user_message[:20])
+
+    async def get_attached_document_ids(self, session_id: uuid.UUID) -> list[uuid.UUID]:
+        """Parse [[document-upload]] system messages in this session and return unique document ids."""
+        messages = await self._message_repo.get_by_session(session_id, skip=0, limit=500)
+        unique_doc_ids: list[uuid.UUID] = []
+        seen: set[uuid.UUID] = set()
+
+        for msg in messages:
+            if msg.role != MessageRole.system:
+                continue
+            content = msg.content or ""
+            if not content.startswith(DOCUMENT_UPLOAD_PREFIX):
+                continue
+
+            payload_raw = content[len(DOCUMENT_UPLOAD_PREFIX):]
+            try:
+                payload = json.loads(payload_raw)
+                doc_id_raw = payload.get("document_id")
+                if not doc_id_raw:
+                    continue
+                doc_id = uuid.UUID(str(doc_id_raw))
+            except Exception:
+                continue
+
+            if doc_id in seen:
+                continue
+            seen.add(doc_id)
+            unique_doc_ids.append(doc_id)
+
+        return unique_doc_ids

@@ -2,9 +2,12 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncGenerator
+from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any
 
 from app.config import settings
+from app.rag.chroma_adapter import scoped_allowed_full_doc_ids
+from app.repositories.document_repository import DocumentRepository
 from app.schemas.query import SSEEvent
 
 if TYPE_CHECKING:
@@ -29,10 +32,12 @@ class RAGQueryService:
         rag_engine: "RAGAnything",
         llm_adapter: "OllamaLLMAdapter",
         conversation_service: "ConversationService",
+        document_repo: DocumentRepository,
     ) -> None:
         self._rag = rag_engine
         self._llm = llm_adapter
         self._conv_svc = conversation_service
+        self._doc_repo = document_repo
 
     async def query_stream(
         self,
@@ -45,12 +50,19 @@ class RAGQueryService:
             conv_context = await self._conv_svc.get_conversation_context(session_id, question)
             effective_mode = self._select_mode(mode)
             await self._conv_svc.save_user_message(session_id, question, effective_mode)
+            session_doc_scope = await self._resolve_session_doc_scope(session_id)
 
-            query_result = await self._query_with_fallback(
-                question=question,
-                mode=effective_mode,
-                conversation_history=conv_context,
+            scope_ctx = (
+                scoped_allowed_full_doc_ids(session_doc_scope)
+                if session_doc_scope is not None
+                else nullcontext()
             )
+            with scope_ctx:
+                query_result = await self._query_with_fallback(
+                    question=question,
+                    mode=effective_mode,
+                    conversation_history=conv_context,
+                )
         except Exception as exc:
             logger.error("RAG query failed for session %s: %s", session_id, exc)
             yield _sse_json(SSEEvent(type="error", content=str(exc)))
@@ -120,6 +132,23 @@ class RAGQueryService:
             )
             return retry
         return answer
+
+    async def _resolve_session_doc_scope(self, session_id: uuid.UUID) -> set[str] | None:
+        """Return session-bound LightRAG doc ids for vector filtering.
+
+        - None: no session-bound uploads, keep global retrieval.
+        - set([...]): restrict retrieval to these doc ids.
+        """
+        attached_doc_ids = await self._conv_svc.get_attached_document_ids(session_id)
+        if not attached_doc_ids:
+            return None
+
+        rag_doc_ids: set[str] = set()
+        for doc_id in attached_doc_ids:
+            doc = await self._doc_repo.get_by_id(doc_id)
+            if doc and doc.rag_doc_id and doc.status.value == "completed":
+                rag_doc_ids.add(doc.rag_doc_id)
+        return rag_doc_ids
 
 
 def _needs_naive_fallback(answer: str) -> bool:

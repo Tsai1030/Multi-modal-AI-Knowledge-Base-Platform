@@ -349,10 +349,24 @@ class DocumentService:
             try:
                 await self._rag.lightrag.adelete_by_doc_id(doc.rag_doc_id)
             except Exception as exc:
-                logger.error(f"Failed to delete vectors for document {doc_id}: {exc}")
+                logger.error("Failed to delete vectors for document %s: %s", doc_id, exc)
+            await self._delete_chunks_from_chroma(doc.rag_doc_id)
 
         file_path = Path(doc.file_path)
         if file_path.exists():
             file_path.unlink()
 
         await self._doc_repo.delete(doc_id)
+
+    async def _delete_chunks_from_chroma(self, rag_doc_id: str) -> None:
+        """Directly remove all ChromaDB chunks matching a rag_doc_id via full_doc_id metadata."""
+        try:
+            collection = getattr(self._rag.lightrag.chunks_vdb, "_collection", None)
+            if collection is None:
+                return
+            result = await collection.get(where={"full_doc_id": rag_doc_id}, include=["documents"])
+            if result["ids"]:
+                await collection.delete(ids=result["ids"])
+                logger.info("Deleted %d ChromaDB chunks for rag_doc_id=%s", len(result["ids"]), rag_doc_id)
+        except Exception as exc:
+            logger.warning("Direct ChromaDB cleanup failed for rag_doc_id=%s: %s", rag_doc_id, exc)

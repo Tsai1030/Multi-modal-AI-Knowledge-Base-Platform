@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_admin, get_db
 from app.core.exceptions import NotFoundError
 from app.models.user import User, UserRole
+from app.rag.engine import RAGEngine
+from app.repositories.document_repository import DocumentRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth import RoleUpdateRequest, StatusUpdateRequest, UserPublicResponse
 
@@ -51,3 +53,35 @@ async def update_user_status(
     if updated is None:
         raise NotFoundError(f"User not found: {user_id}")
     return updated
+
+
+@router.delete("/vectors/orphaned", status_code=status.HTTP_200_OK)
+async def purge_orphaned_vectors(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> dict:
+    """Delete ChromaDB chunk vectors that no longer have a matching document record."""
+    rag = RAGEngine.get_rag()
+    doc_repo = DocumentRepository(db)
+
+    active_docs = await doc_repo.get_all(limit=10000)
+    active_rag_ids = {doc.rag_doc_id for doc in active_docs if doc.rag_doc_id}
+
+    collection = getattr(rag.lightrag.chunks_vdb, "_collection", None)
+    if collection is None:
+        return {"deleted": 0, "message": "ChromaDB collection not available"}
+
+    all_chunks = await collection.get(include=["metadatas"])
+    if not all_chunks["ids"]:
+        return {"deleted": 0, "message": "No chunks in vector store"}
+
+    orphaned_ids = [
+        chunk_id
+        for chunk_id, meta in zip(all_chunks["ids"], all_chunks["metadatas"])
+        if meta.get("full_doc_id") not in active_rag_ids
+    ]
+
+    if orphaned_ids:
+        await collection.delete(ids=orphaned_ids)
+
+    return {"deleted": len(orphaned_ids), "message": f"Deleted {len(orphaned_ids)} orphaned chunks"}

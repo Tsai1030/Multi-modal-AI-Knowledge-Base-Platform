@@ -7,6 +7,7 @@ from app.core.exceptions import AuthorizationError, NotFoundError
 from app.models.user import User
 from app.rag.conversation_compactor import ConversationCompactor
 from app.rag.engine import RAGEngine
+from app.repositories.document_repository import DocumentRepository
 from app.repositories.message_repository import MessageRepository
 from app.repositories.session_repository import SessionRepository
 from app.schemas.query import QueryRequest
@@ -28,6 +29,7 @@ def _get_rag_query_service(db: AsyncSession = Depends(get_db)) -> RAGQueryServic
         rag_engine=RAGEngine.get_rag(),
         llm_adapter=llm_adapter,
         conversation_service=conversation_svc,
+        document_repo=DocumentRepository(db),
     )
 
 
