@@ -364,3 +364,103 @@
 ## 驗證結果
 - 14 個 Document 測試通過（`uv run pytest tests/test_documents.py -v`）
 - 65 個測試全數通過（14 document + 23 conversation + 16 RAG adapter + 12 auth）
+
+---
+
+# STEP 6 — 對話視窗 API 與 SSE Streaming 查詢完成摘要
+
+## 完成項目
+
+### 1. Pydantic Schemas（3 個新檔案）
+
+| 檔案 | Schema | 用途 |
+|------|--------|------|
+| `schemas/session.py` | `SessionCreateRequest`、`SessionResponse`、`SessionListResponse`、`SessionRenameRequest` | Session CRUD API 輸入/輸出 |
+| `schemas/message.py` | `MessageResponse`（含 `from_orm_message` 解析 rag_sources JSON）、`SessionDetailResponse` | GET /{session_id} 詳情回應 |
+| `schemas/query.py` | `QueryRequest`（min_length=1, max_length=2000）、`SSEEvent`（type/content/sources/session_id/message_id） | SSE 串流查詢 |
+
+### 2. `api/v1/sessions.py` — Session CRUD Router
+
+| 端點 | 方法 | Status | 說明 |
+|------|------|--------|------|
+| `/sessions/` | POST | 201 | 建立新對話視窗，支援自訂 query_mode |
+| `/sessions/` | GET | 200 | 列出當前用戶所有 session（pagination），回傳 SessionListResponse |
+| `/sessions/{session_id}` | GET | 200 | 取得 session 詳情含最近 50 條 messages |
+| `/sessions/{session_id}/title` | PATCH | 200 | 重新命名 session |
+| `/sessions/{session_id}` | DELETE | 204 | 刪除 session（CASCADE 自動刪除所有 messages） |
+
+DI factory `_get_chat_session_service(db)` 定義於 router 檔案內，遵循 `documents.py` 的 local DI 模式。
+
+### 3. `services/rag_query_service.py` — RAGQueryService
+
+核心查詢流程（DECISION STEP6 方案 B）：
+1. `save_user_message()` → 儲存使用者訊息至 DB
+2. `get_conversation_context()` → 取得 conv_context（含 Compact）
+3. `rag.aquery(question, mode=mode, param=QueryParam(conversation_history=conv_context))` → 取得知識庫 RAG context 字串
+   - **使用 `conversation_history=` 參數**（DECISION STEP4，非 `history_messages=`）
+4. `llm_adapter.complete_stream(question, system_prompt=rag_result)` → 真實串流 token
+5. `save_assistant_message()` + `auto_title_session()` → 儲存回覆並自動命名
+6. yield `sources` event（`sources=[]`，TODO：接 RAG source extraction）
+7. yield `done` event（含 message_id）
+8. 任何階段異常 → yield `error` event 後 return
+
+SSE 輸出格式：
+```
+data: {"type": "token", "content": "逐字"}
+data: {"type": "sources", "sources": []}
+data: {"type": "done", "message_id": "uuid", "session_id": "uuid"}
+data: {"type": "error", "content": "error message"}
+data: [DONE]
+```
+
+### 4. `api/v1/query.py` — SSE Query Router
+
+- `POST /query/stream` → StreamingResponse（media_type: text/event-stream）
+- Headers：`Cache-Control: no-cache`、`X-Accel-Buffering: no`
+- **串流前先驗證 session 存在及所有權**：確保 session 不存在回傳 404 HTTP（而非 SSE error event）
+- DI factory `_get_rag_query_service(db)` 建構完整依賴鏈：
+  ```
+  RAGQueryService
+    ├── RAGEngine.get_rag()
+    ├── RAGEngine.get_llm_adapter()
+    └── ConversationService
+          ├── SessionRepository(db)
+          ├── MessageRepository(db)
+          └── ConversationCompactor(llm_adapter)
+  ```
+
+### 5. 計畫書決策標記（`RAG_Platform_ProjectPlan.md`）
+
+| 標記 | 決策內容 |
+|------|---------|
+| DECISION STEP4 | `rag.aquery()` 必須使用 `QueryParam(conversation_history=)`，非 `history_messages=` |
+| DECISION STEP6 方案B | 採真實串流：`rag.aquery()` 取 RAG context，`llm_adapter.complete_stream()` 做串流輸出 |
+| DECISION STEP6 DI | DI factory 定義於各 router 檔案內（local），不修改 `deps.py` |
+
+### 6. 測試（20 個新增，全數通過）
+
+**`tests/test_sessions.py`（12 tests）**
+
+| 分類 | 測試數 | 測試重點 |
+|------|--------|---------|
+| Create | 3 | 預設 mode 201、自訂 mode、無 token 401 |
+| List | 2 | 只看自己的 sessions、無 token 401 |
+| Get detail | 3 | 正確回傳 session+messages、他人 403、不存在 404 |
+| Rename | 2 | 更新標題、他人 403 |
+| Delete | 2 | owner 刪除 204 + 再訪 404、他人 403 |
+
+**`tests/test_query.py`（8 tests）**
+
+| 分類 | 測試數 | 測試重點 |
+|------|--------|---------|
+| Auth guards | 2 | 無 token 401、session 不存在 404（HTTP 層）|
+| SSE format | 4 | Content-Type 驗證、token events 內容、[DONE] sentinel、done event 含 message_id |
+| DB persistence | 2 | Q&A 後 DB 有 user+assistant messages、rag.aquery 收到正確 question+mode |
+
+測試策略：
+- `query_client` fixture 覆寫 `_get_rag_query_service`：注入真實 `ConversationService`（接 test DB）+ mocked RAG + mocked LLM async generator
+- mocked LLM `complete_stream` 以 `async def ... yield token` 實作真正的 async generator
+
+## 驗證結果
+- 20 個新增測試通過（12 sessions + 8 query）
+- 85 個測試全數通過（20 新增 + 65 既有）

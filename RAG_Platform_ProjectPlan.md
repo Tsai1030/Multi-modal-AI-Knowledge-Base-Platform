@@ -1214,11 +1214,15 @@ Step E: 儲存本輪 user message + assistant response 至 DB
           核心查詢流程：
           1. 儲存 user message 至 DB
           2. 呼叫 conversation_service.get_conversation_context()
-             → 取得含歷史的 history_messages（含 Compact 處理）
-          3. 呼叫 rag.aquery(question, mode=mode, history_messages=...)
-             → 取得 RAG 增強後的 context
-          4. 呼叫 llm_adapter.complete_stream(question, history=context)
-             → 逐 token yield
+             → 取得含歷史的 conv_context: list[dict]（含 Compact 處理）
+          3. 呼叫 rag.aquery(question, mode=mode, param=QueryParam(conversation_history=conv_context))
+             → 取得 RAG 增強後的知識庫回應字串 rag_result
+             ⚠️ [DECISION STEP4] 參數名稱必須使用 conversation_history=，非 history_messages=
+                理由：STEP 3/4 實測確認 LightRAG/RAGAnything 使用 QueryParam(conversation_history=) 介面
+          4. 呼叫 llm_adapter.complete_stream(question, system_prompt=rag_result)
+             → rag_result 作為 system_prompt 注入知識庫上下文，逐 token yield（真實串流）
+             ⚠️ [DECISION STEP6] 採用方案 B：rag.aquery() 取得知識庫 context，
+                llm_adapter.complete_stream() 負責真實串流輸出，非偽串流
           5. 串流結束後：
              a. 儲存完整 assistant message 至 DB
              b. auto_title_session（若為第一輪）
@@ -1235,12 +1239,16 @@ Step E: 儲存本輪 user message + assistant response 至 DB
   ```
 
 - [ ] **建立 `api/v1/query.py`：Query Router**
+  ⚠️ [DECISION STEP6] DI factory 沿用 documents.py 模式：在各 router 檔案內定義 private DI function，不修改 deps.py
+  - `sessions.py` → `_get_chat_session_service(db)` 建構 ChatSessionService(SessionRepository, MessageRepository)
+  - `query.py` → `_get_rag_query_service(db)` 建構完整依賴鏈：
+    RAGQueryService(RAGEngine.get_rag(), RAGEngine.get_llm_adapter(), ConversationService(SessionRepository, MessageRepository, ConversationCompactor(llm_adapter)))
   ```python
   @router.post("/stream")
   async def query_stream(
       request: QueryRequest,
       current_user: User = Depends(get_current_user),
-      rag_query_service: RAGQueryService = Depends(...)
+      rag_query_service: RAGQueryService = Depends(_get_rag_query_service)
   ) -> StreamingResponse:
       """
       SSE endpoint。
