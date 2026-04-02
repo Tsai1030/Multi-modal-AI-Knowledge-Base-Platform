@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv add:*)",
+      "Bash(\"/c/Users/user/AppData/Roaming/npm/yarn\" --version)",
+      "Bash(\"C:/Users/user/AppData/Roaming/npm/yarn.cmd\" --version)",
+      "Bash(\"/c/Users/user/AppData/Roaming/npm/yarn\" add:*)",
+      "Bash(where node:*)",
+      "Bash(grep -n \"history_messages\\\\|conversation_history\\\\|chat_history\" d:/RAG_TEST/backend/.venv/Lib/site-packages/raganything/query.py d:/RAG_TEST/backend/.venv/Lib/site-packages/lightrag/*.py)",
+      "Bash(uv run:*)",
+      "Bash(node node_modules/.bin/next build)",
+      "Bash(node node_modules/next/dist/bin/next build)"
+    ]
+  }
+}

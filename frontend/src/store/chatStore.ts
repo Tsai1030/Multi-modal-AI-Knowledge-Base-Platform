@@ -1,7 +1,7 @@
 import { create } from 'zustand'
-import type { ChatSession } from '@/types/session'
-import type { Message } from '@/types/message'
 import { sessionApi } from '@/lib/api'
+import type { Message } from '@/types/message'
+import type { ChatSession } from '@/types/session'
 
 interface ChatStore {
   sessions: ChatSession[]
@@ -18,10 +18,10 @@ interface ChatStore {
   appendStreamToken: (token: string) => void
   finalizeStreamMessage: (msg: Message, sessionId: string) => void
   clearStreamingContent: () => void
-  setIsStreaming: (v: boolean) => void
+  setIsStreaming: (value: boolean) => void
 }
 
-export const useChatStore = create<ChatStore>((set, get) => ({
+export const useChatStore = create<ChatStore>((set) => ({
   sessions: [],
   currentSessionId: null,
   messages: {},
@@ -35,55 +35,72 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   createSession: async (mode = 'hybrid') => {
     const session = await sessionApi.create({ query_mode: mode })
-    set((s) => ({ sessions: [session, ...s.sessions] }))
+    set((state) => ({ sessions: [session, ...state.sessions] }))
     return session
   },
 
   selectSession: async (sessionId: string) => {
     set({ currentSessionId: sessionId })
-    if (!get().messages[sessionId]) {
-      const detail = await sessionApi.get(sessionId)
-      set((s) => ({
-        messages: { ...s.messages, [sessionId]: detail.messages },
-      }))
-    }
+
+    const detail = await sessionApi.get(sessionId)
+    set((state) => {
+      const hasSession = state.sessions.some((session) => session.id === detail.session.id)
+      return {
+        sessions: hasSession
+          ? state.sessions.map((session) =>
+              session.id === detail.session.id ? detail.session : session
+            )
+          : [detail.session, ...state.sessions],
+        messages: {
+          ...state.messages,
+          [sessionId]: detail.messages,
+        },
+      }
+    })
   },
 
   deleteSession: async (sessionId: string) => {
     await sessionApi.delete(sessionId)
-    set((s) => ({
-      sessions: s.sessions.filter((sess) => sess.id !== sessionId),
-      currentSessionId: s.currentSessionId === sessionId ? null : s.currentSessionId,
+    set((state) => ({
+      sessions: state.sessions.filter((session) => session.id !== sessionId),
+      currentSessionId:
+        state.currentSessionId === sessionId ? null : state.currentSessionId,
       messages: Object.fromEntries(
-        Object.entries(s.messages).filter(([id]) => id !== sessionId)
+        Object.entries(state.messages).filter(([id]) => id !== sessionId)
       ),
     }))
   },
 
   renameSession: async (sessionId: string, title: string) => {
     const updated = await sessionApi.rename(sessionId, { title })
-    set((s) => ({
-      sessions: s.sessions.map((sess) => (sess.id === sessionId ? updated : sess)),
+    set((state) => ({
+      sessions: state.sessions.map((session) =>
+        session.id === sessionId ? updated : session
+      ),
     }))
   },
 
   appendStreamToken: (token: string) =>
-    set((s) => ({ streamingContent: s.streamingContent + token })),
+    set((state) => ({ streamingContent: state.streamingContent + token })),
 
   finalizeStreamMessage: (msg: Message, sessionId: string) =>
-    set((s) => ({
+    set((state) => ({
       messages: {
-        ...s.messages,
-        [sessionId]: [...(s.messages[sessionId] ?? []), msg],
+        ...state.messages,
+        [sessionId]: [...(state.messages[sessionId] ?? []), msg],
       },
-      sessions: s.sessions.map((sess) =>
-        sess.id === sessionId
-          ? { ...sess, message_count: sess.message_count + 1, last_message_at: msg.created_at }
-          : sess
+      sessions: state.sessions.map((session) =>
+        session.id === sessionId
+          ? {
+              ...session,
+              message_count: session.message_count + 1,
+              last_message_at: msg.created_at,
+            }
+          : session
       ),
     })),
 
   clearStreamingContent: () => set({ streamingContent: '' }),
 
-  setIsStreaming: (v: boolean) => set({ isStreaming: v }),
+  setIsStreaming: (value: boolean) => set({ isStreaming: value }),
 }))

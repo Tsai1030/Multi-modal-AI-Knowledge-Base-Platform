@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import type { SSEEvent } from '@/types/message'
 
@@ -43,6 +43,7 @@ export function useSSEStream({ onToken, onDone, onError }: UseSSEStreamOptions) 
 
         const decoder = new TextDecoder()
         let buffer = ''
+        let sources: string[] = []
 
         while (true) {
           const { done, value } = await reader.read()
@@ -54,6 +55,7 @@ export function useSSEStream({ onToken, onDone, onError }: UseSSEStreamOptions) 
 
           for (const line of lines) {
             if (!line.startsWith('data: ')) continue
+
             const raw = line.slice(6).trim()
             if (raw === '[DONE]') break
 
@@ -61,23 +63,25 @@ export function useSSEStream({ onToken, onDone, onError }: UseSSEStreamOptions) 
               const event: SSEEvent = JSON.parse(raw)
               if (event.type === 'token' && event.content) {
                 onToken(event.content)
+              } else if (event.type === 'sources') {
+                sources = event.sources ?? []
               } else if (event.type === 'done') {
-                onDone(event.message_id ?? '', event.sources ?? [])
+                onDone(event.message_id ?? '', sources)
               } else if (event.type === 'error' && event.content) {
                 onError(event.content)
               }
             } catch {
-              // skip malformed line
+              // Ignore malformed SSE payloads.
             }
           }
         }
-      } catch (err) {
-        onError(err instanceof Error ? err.message : '連線中斷')
+      } catch (error) {
+        onError(error instanceof Error ? error.message : '串流連線失敗')
       } finally {
         setIsStreaming(false)
       }
     },
-    [token, onToken, onDone, onError]
+    [token, onDone, onError, onToken]
   )
 
   return { stream, isStreaming }

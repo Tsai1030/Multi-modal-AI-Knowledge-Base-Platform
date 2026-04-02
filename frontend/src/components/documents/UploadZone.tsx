@@ -1,12 +1,11 @@
 'use client'
 
 import { useCallback, useState } from 'react'
+import { Upload } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
 import { toast } from 'sonner'
-import { Upload, X } from 'lucide-react'
-import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import { documentApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -41,8 +40,8 @@ export function UploadZone({ onUploaded }: UploadZoneProps) {
     async (files: File[]) => {
       if (!files.length) return
 
-      const entries: UploadingFile[] = files.map((f) => ({
-        name: f.name,
+      const entries: UploadingFile[] = files.map((file) => ({
+        name: file.name,
         progress: 0,
         done: false,
         error: false,
@@ -50,35 +49,47 @@ export function UploadZone({ onUploaded }: UploadZoneProps) {
       setUploading(entries)
 
       await Promise.all(
-        files.map(async (file, i) => {
+        files.map(async (file, index) => {
+          let ticker: ReturnType<typeof setInterval> | null = null
+
           try {
-            // Simulate progress with fake ticks while uploading
-            const ticker = setInterval(() => {
+            ticker = setInterval(() => {
               setUploading((prev) =>
-                prev.map((u, idx) =>
-                  idx === i && !u.done ? { ...u, progress: Math.min(u.progress + 15, 85) } : u
+                prev.map((item, itemIndex) =>
+                  itemIndex === index && !item.done
+                    ? { ...item, progress: Math.min(item.progress + 15, 85) }
+                    : item
                 )
               )
             }, 300)
 
             await documentApi.upload(file)
-            clearInterval(ticker)
+
+            if (ticker) clearInterval(ticker)
             setUploading((prev) =>
-              prev.map((u, idx) => (idx === i ? { ...u, progress: 100, done: true } : u))
+              prev.map((item, itemIndex) =>
+                itemIndex === index ? { ...item, progress: 100, done: true } : item
+              )
             )
             toast.success(`${file.name} 上傳成功`)
-          } catch (err: unknown) {
+          } catch (error: unknown) {
+            if (ticker) clearInterval(ticker)
             setUploading((prev) =>
-              prev.map((u, idx) => (idx === i ? { ...u, error: true, done: true } : u))
+              prev.map((item, itemIndex) =>
+                itemIndex === index ? { ...item, error: true, done: true } : item
+              )
             )
-            const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '上傳失敗'
-            toast.error(`${file.name}: ${msg}`)
+
+            const message =
+              (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+              '上傳失敗'
+            toast.error(`${file.name}: ${message}`)
           }
         })
       )
 
       onUploaded()
-      setTimeout(() => setUploading([]), 2000)
+      window.setTimeout(() => setUploading([]), 2000)
     },
     [onUploaded]
   )
@@ -94,46 +105,57 @@ export function UploadZone({ onUploaded }: UploadZoneProps) {
       <div
         {...getRootProps()}
         className={cn(
-          'flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-10 text-center transition-colors cursor-pointer',
+          'cursor-pointer rounded-[1.75rem] border-2 border-dashed p-10 text-center transition-colors',
+          'flex flex-col items-center justify-center gap-3',
           isDragActive
             ? 'border-foreground/40 bg-muted'
             : 'border-border hover:border-foreground/20 hover:bg-muted/40'
         )}
       >
         <input {...getInputProps()} />
-        <Upload className="size-8 text-muted-foreground" />
+        <div className="flex size-14 items-center justify-center rounded-2xl border border-border bg-background/80">
+          <Upload className="text-muted-foreground" />
+        </div>
         <div className="flex flex-col gap-1">
           <p className="text-sm font-medium">
-            {isDragActive ? '放開以上傳' : '拖拉檔案至此，或點擊選擇'}
+            {isDragActive ? '放開以上傳檔案' : '拖曳檔案到這裡，或點擊選擇檔案'}
           </p>
-          <p className="text-xs text-muted-foreground">支援多檔同時上傳</p>
+          <p className="text-xs text-muted-foreground">
+            支援 PDF、Office 文件、Markdown、文字與圖片格式
+          </p>
         </div>
         <div className="flex flex-wrap justify-center gap-1.5">
-          {FORMAT_LABELS.map((fmt) => (
-            <Badge key={fmt} variant="secondary" className="text-xs">
-              {fmt}
+          {FORMAT_LABELS.map((format) => (
+            <Badge key={format} variant="secondary" className="text-xs">
+              {format}
             </Badge>
           ))}
         </div>
       </div>
 
-      {/* Upload progress list */}
       {uploading.length > 0 && (
         <div className="flex flex-col gap-2">
-          {uploading.map((u, i) => (
-            <div key={i} className="flex flex-col gap-1 rounded-lg border border-border p-3">
-              <div className="flex items-center justify-between">
-                <span className="truncate text-sm">{u.name}</span>
+          {uploading.map((item, index) => (
+            <div
+              key={`${item.name}-${index}`}
+              className="flex flex-col gap-1 rounded-2xl border border-border/70 bg-card/80 p-3"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="truncate text-sm">{item.name}</span>
                 <span
                   className={cn(
                     'text-xs',
-                    u.error ? 'text-destructive' : u.done ? 'text-green-500' : 'text-muted-foreground'
+                    item.error
+                      ? 'text-destructive'
+                      : item.done
+                        ? 'text-foreground'
+                        : 'text-muted-foreground'
                   )}
                 >
-                  {u.error ? '失敗' : u.done ? '完成' : `${u.progress}%`}
+                  {item.error ? '失敗' : item.done ? '完成' : `${item.progress}%`}
                 </span>
               </div>
-              {!u.error && <Progress value={u.progress} className="h-1" />}
+              {!item.error && <Progress value={item.progress} className="h-1" />}
             </div>
           ))}
         </div>

@@ -1,22 +1,22 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { Spinner } from '@/components/ui/spinner'
+import { useSSEStream } from '@/hooks/useSSEStream'
+import { useChatStore } from '@/store/chatStore'
+import type { Message } from '@/types/message'
+import { InputBar } from './InputBar'
 import { MessageBubble } from './MessageBubble'
 import { StreamingText } from './StreamingText'
-import { InputBar } from './InputBar'
-import { useChatStore } from '@/store/chatStore'
-import { useSSEStream } from '@/hooks/useSSEStream'
-import type { Message } from '@/types/message'
 
 interface ChatWindowProps {
   sessionId: string
-  queryMode: string
 }
 
-export function ChatWindow({ sessionId, queryMode }: ChatWindowProps) {
+export function ChatWindow({ sessionId }: ChatWindowProps) {
   const {
+    sessions,
     messages,
     isStreaming,
     streamingContent,
@@ -29,14 +29,16 @@ export function ChatWindow({ sessionId, queryMode }: ChatWindowProps) {
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const sessionMessages = messages[sessionId] ?? []
+  const currentSession = sessions.find((session) => session.id === sessionId)
+  const queryMode = currentSession?.query_mode ?? 'hybrid'
 
   useEffect(() => {
-    selectSession(sessionId)
+    void selectSession(sessionId)
   }, [sessionId, selectSession])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [sessionMessages, streamingContent])
+  }, [sessionMessages.length, streamingContent])
 
   const onToken = useCallback(
     (token: string) => appendStreamToken(token),
@@ -45,7 +47,7 @@ export function ChatWindow({ sessionId, queryMode }: ChatWindowProps) {
 
   const onDone = useCallback(
     (messageId: string, sources: string[]) => {
-      const assistantMsg: Message = {
+      const assistantMessage: Message = {
         id: messageId,
         session_id: sessionId,
         role: 'assistant',
@@ -55,11 +57,12 @@ export function ChatWindow({ sessionId, queryMode }: ChatWindowProps) {
         query_mode: queryMode,
         created_at: new Date().toISOString(),
       }
-      finalizeStreamMessage(assistantMsg, sessionId)
+
+      finalizeStreamMessage(assistantMessage, sessionId)
       clearStreamingContent()
       setIsStreaming(false)
     },
-    [sessionId, queryMode, finalizeStreamMessage, clearStreamingContent, setIsStreaming]
+    [clearStreamingContent, finalizeStreamMessage, queryMode, sessionId, setIsStreaming]
   )
 
   const onError = useCallback(
@@ -77,8 +80,7 @@ export function ChatWindow({ sessionId, queryMode }: ChatWindowProps) {
     async (question: string) => {
       if (isStreaming) return
 
-      // Optimistically add user message to UI
-      const userMsg: Message = {
+      const userMessage: Message = {
         id: crypto.randomUUID(),
         session_id: sessionId,
         role: 'user',
@@ -88,10 +90,11 @@ export function ChatWindow({ sessionId, queryMode }: ChatWindowProps) {
         query_mode: queryMode,
         created_at: new Date().toISOString(),
       }
-      useChatStore.setState((s) => ({
+
+      useChatStore.setState((state) => ({
         messages: {
-          ...s.messages,
-          [sessionId]: [...(s.messages[sessionId] ?? []), userMsg],
+          ...state.messages,
+          [sessionId]: [...(state.messages[sessionId] ?? []), userMessage],
         },
       }))
 
@@ -99,25 +102,23 @@ export function ChatWindow({ sessionId, queryMode }: ChatWindowProps) {
       clearStreamingContent()
       await stream(sessionId, question, queryMode)
     },
-    [isStreaming, sessionId, queryMode, stream, setIsStreaming, clearStreamingContent]
+    [clearStreamingContent, isStreaming, queryMode, sessionId, setIsStreaming, stream]
   )
 
   return (
     <div className="flex h-full flex-col">
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-6">
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
           {sessionMessages.length === 0 && !isStreaming && (
-            <div className="flex h-64 items-center justify-center text-muted-foreground text-sm">
-              輸入問題開始對話
+            <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
+              輸入你的問題，開始這段對話
             </div>
           )}
 
-          {sessionMessages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
+          {sessionMessages.map((message) => (
+            <MessageBubble key={message.id} message={message} />
           ))}
 
-          {/* Streaming message */}
           {isStreaming && (
             <div className="flex gap-3">
               <div className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-xs font-medium text-muted-foreground">
@@ -137,11 +138,7 @@ export function ChatWindow({ sessionId, queryMode }: ChatWindowProps) {
         </div>
       </div>
 
-      <InputBar
-        onSubmit={handleSubmit}
-        isStreaming={isStreaming}
-        queryMode={queryMode}
-      />
+      <InputBar onSubmit={handleSubmit} isStreaming={isStreaming} queryMode={queryMode} />
     </div>
   )
 }

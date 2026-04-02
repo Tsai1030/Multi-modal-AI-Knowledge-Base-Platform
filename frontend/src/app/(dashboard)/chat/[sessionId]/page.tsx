@@ -1,10 +1,10 @@
 import { ChatWindow } from '@/components/chat/ChatWindow'
 
-interface PageProps {
+export default async function ChatSessionPage({
+  params,
+}: {
   params: Promise<{ sessionId: string }>
-}
-
-export default async function SessionPage({ params }: PageProps) {
+}) {
   const { sessionId } = await params
-  return <ChatWindow sessionId={sessionId} queryMode="hybrid" />
+  return <ChatWindow sessionId={sessionId} />
 }

@@ -1,31 +1,18 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
-import { toast } from 'sonner'
+import { usePathname, useRouter } from 'next/navigation'
 import {
-  Plus,
-  MessageSquare,
   FileText,
-  Settings,
   LogOut,
+  MessageSquare,
   MoreHorizontal,
   Pencil,
-  Trash2,
+  Plus,
   Shield,
+  Trash2,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { toast } from 'sonner'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,11 +23,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { useChatStore } from '@/store/chatStore'
-import { useAuthStore } from '@/store/authStore'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/store/authStore'
+import { useChatStore } from '@/store/chatStore'
 import type { ChatSession } from '@/types/session'
 
 const MODE_OPTIONS = [
@@ -49,14 +48,17 @@ const MODE_OPTIONS = [
   { value: 'global', label: 'Global' },
 ] as const
 
-function formatRelativeTime(dateStr: string | null): string {
-  if (!dateStr) return ''
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return '剛剛'
-  if (mins < 60) return `${mins} 分鐘前`
-  const hours = Math.floor(mins / 60)
+function formatRelativeTime(dateString: string | null): string {
+  if (!dateString) return '尚未提問'
+
+  const diffMs = Date.now() - new Date(dateString).getTime()
+  const minutes = Math.floor(diffMs / 60000)
+  if (minutes < 1) return '剛剛'
+  if (minutes < 60) return `${minutes} 分鐘前`
+
+  const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours} 小時前`
+
   return `${Math.floor(hours / 24)} 天前`
 }
 
@@ -72,7 +74,7 @@ export function SessionSidebar() {
   const [modeOpen, setModeOpen] = useState(false)
 
   useEffect(() => {
-    loadSessions().catch(() => {})
+    void loadSessions().catch(() => undefined)
   }, [loadSessions])
 
   const handleNewSession = async (mode: string) => {
@@ -87,12 +89,15 @@ export function SessionSidebar() {
 
   const handleDelete = async () => {
     if (!deleteTarget) return
+
     try {
       await deleteSession(deleteTarget.id)
-      if (pathname.includes(deleteTarget.id)) router.push('/chat')
+      if (pathname.includes(deleteTarget.id)) {
+        router.push('/chat')
+      }
       toast.success('對話已刪除')
     } catch {
-      toast.error('刪除失敗')
+      toast.error('刪除對話失敗')
     } finally {
       setDeleteTarget(null)
     }
@@ -100,11 +105,12 @@ export function SessionSidebar() {
 
   const handleRename = async () => {
     if (!renameTarget || !renameValue.trim()) return
+
     try {
       await renameSession(renameTarget.id, renameValue.trim())
-      toast.success('已重新命名')
+      toast.success('對話名稱已更新')
     } catch {
-      toast.error('重新命名失敗')
+      toast.error('更新名稱失敗')
     } finally {
       setRenameTarget(null)
     }
@@ -118,18 +124,21 @@ export function SessionSidebar() {
   const currentSessionId = pathname.match(/\/chat\/([^/]+)/)?.[1] ?? null
 
   return (
-    <aside className="flex h-full w-64 flex-col bg-sidebar text-sidebar-foreground">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-4">
-        <div className="flex size-6 items-center justify-center rounded bg-sidebar-foreground/10">
-          <span className="font-mono text-xs font-bold text-sidebar-foreground">R</span>
+    <aside className="flex h-full w-72 flex-col bg-sidebar text-sidebar-foreground">
+      <div className="px-4 py-4">
+        <div className="flex items-center gap-3">
+          <div className="flex size-8 items-center justify-center rounded-2xl bg-sidebar-accent text-sm font-semibold text-sidebar-accent-foreground">
+            R
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">RAG Platform</p>
+            <p className="truncate text-xs text-sidebar-foreground/50">Knowledge Workspace</p>
+          </div>
         </div>
-        <span className="truncate font-medium text-sm tracking-tight">RAG Platform</span>
       </div>
 
       <Separator className="bg-sidebar-border" />
 
-      {/* New Chat Button */}
       <div className="px-3 py-3">
         <DropdownMenu open={modeOpen} onOpenChange={setModeOpen}>
           <DropdownMenuTrigger
@@ -140,81 +149,88 @@ export function SessionSidebar() {
               />
             }
           >
-            <Plus data-icon="inline-start" className="size-4" />
+            <Plus data-icon="inline-start" />
             新對話
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-44">
-            {MODE_OPTIONS.map((opt) => (
-              <DropdownMenuItem key={opt.value} onSelect={() => handleNewSession(opt.value)}>
-                {opt.label} 模式
+            {MODE_OPTIONS.map((option) => (
+              <DropdownMenuItem
+                key={option.value}
+                onClick={() => void handleNewSession(option.value)}
+              >
+                {option.label}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
-      {/* Session List */}
       <ScrollArea className="flex-1 px-2">
-        <div className="flex flex-col gap-0.5 py-1">
+        <div className="flex flex-col gap-1 py-2">
           {sessions.length === 0 && (
-            <p className="px-2 py-6 text-center text-xs text-sidebar-foreground/40">
-              尚無對話記錄
-            </p>
+            <div className="rounded-2xl border border-sidebar-border bg-sidebar-accent/40 px-3 py-4 text-center text-xs text-sidebar-foreground/55">
+              尚未建立任何對話
+            </div>
           )}
+
           {sessions.map((session) => {
             const isActive = session.id === currentSessionId
+
             return (
               <div
                 key={session.id}
                 className={cn(
-                  'group relative flex items-center gap-2 rounded-md px-2 py-2 text-sm cursor-pointer transition-colors',
+                  'group cursor-pointer rounded-2xl px-3 py-3 transition',
                   isActive
                     ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
+                    : 'hover:bg-sidebar-accent/60'
                 )}
                 onClick={() => router.push(`/chat/${session.id}`)}
               >
-                <MessageSquare className="size-4 shrink-0 opacity-60" />
-                <span className="flex-1 truncate">{session.title}</span>
-                <div className="hidden group-hover:flex items-center">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          variant="ghost"
-                          className="size-6 p-0 text-sidebar-foreground/60 hover:text-sidebar-foreground"
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      }
-                    >
-                      <MoreHorizontal className="size-3.5" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onSelect={() => {
-                          setRenameTarget(session)
-                          setRenameValue(session.title)
-                        }}
-                      >
-                        <Pencil className="size-4" />
-                        重新命名
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onSelect={() => setDeleteTarget(session)}
-                      >
-                        <Trash2 className="size-4" />
-                        刪除
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                <div className="flex items-start gap-2">
+                  <MessageSquare className="mt-0.5 shrink-0 opacity-70" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start gap-2">
+                      <span className="truncate text-sm font-medium">{session.title}</span>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <Button
+                              variant="ghost"
+                              className="ml-auto hidden size-7 p-0 text-sidebar-foreground/55 hover:text-sidebar-foreground group-hover:flex"
+                              onClick={(event) => event.stopPropagation()}
+                            />
+                          }
+                        >
+                          <MoreHorizontal />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setRenameTarget(session)
+                              setRenameValue(session.title)
+                            }}
+                          >
+                            <Pencil />
+                            重新命名
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => setDeleteTarget(session)}
+                          >
+                            <Trash2 />
+                            刪除
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-3 text-xs text-sidebar-foreground/55">
+                      <span>{session.query_mode}</span>
+                      <span>{formatRelativeTime(session.last_message_at)}</span>
+                    </div>
+                  </div>
                 </div>
-                {isActive && (
-                  <span className="ml-auto text-xs opacity-40 group-hover:hidden">
-                    {session.message_count}
-                  </span>
-                )}
               </div>
             )
           })}
@@ -223,20 +239,17 @@ export function SessionSidebar() {
 
       <Separator className="bg-sidebar-border" />
 
-      {/* Bottom Nav */}
-      <nav className="flex flex-col gap-0.5 px-2 py-2">
+      <nav className="flex flex-col gap-1 px-2 py-2">
         <NavItem
-          href="/documents"
-          icon={<FileText className="size-4" />}
           label="文件庫"
+          icon={<FileText />}
           active={pathname.startsWith('/documents')}
           onClick={() => router.push('/documents')}
         />
         {user?.role === 'admin' && (
           <NavItem
-            href="/admin/users"
-            icon={<Shield className="size-4" />}
             label="管理後台"
+            icon={<Shield />}
             active={pathname.startsWith('/admin')}
             onClick={() => router.push('/admin/users')}
           />
@@ -245,54 +258,52 @@ export function SessionSidebar() {
 
       <Separator className="bg-sidebar-border" />
 
-      {/* User Footer */}
       <div className="flex items-center gap-2 px-3 py-3">
-        <Avatar className="size-7 shrink-0">
+        <Avatar className="size-8 shrink-0">
           <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground text-xs">
             {user?.full_name?.[0]?.toUpperCase() ?? 'U'}
           </AvatarFallback>
         </Avatar>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-xs font-medium text-sidebar-foreground">
-            {user?.full_name}
-          </span>
-          <span className="truncate text-xs text-sidebar-foreground/50">{user?.email}</span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-medium">{user?.full_name}</p>
+          <p className="truncate text-xs text-sidebar-foreground/50">{user?.email}</p>
         </div>
         <Tooltip>
           <TooltipTrigger
             render={
               <Button
                 variant="ghost"
-                className="size-7 p-0 text-sidebar-foreground/50 hover:text-sidebar-foreground"
+                className="size-8 p-0 text-sidebar-foreground/55 hover:text-sidebar-foreground"
                 onClick={handleLogout}
               />
             }
           >
-            <LogOut className="size-4" />
+            <LogOut />
           </TooltipTrigger>
           <TooltipContent side="right">登出</TooltipContent>
         </Tooltip>
       </div>
 
-      {/* Delete Confirm */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>刪除對話</AlertDialogTitle>
             <AlertDialogDescription>
-              確定刪除「{deleteTarget?.title}」？此操作無法復原。
+              確定要刪除「{deleteTarget?.title}」嗎？所有訊息紀錄都會一併移除。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               刪除
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Rename Dialog */}
       <Dialog open={!!renameTarget} onOpenChange={(open) => !open && setRenameTarget(null)}>
         <DialogContent className="sm:max-w-xs">
           <DialogHeader>
@@ -300,15 +311,15 @@ export function SessionSidebar() {
           </DialogHeader>
           <Input
             value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleRename()}
+            onChange={(event) => setRenameValue(event.target.value)}
+            onKeyDown={(event) => event.key === 'Enter' && void handleRename()}
             autoFocus
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setRenameTarget(null)}>
               取消
             </Button>
-            <Button onClick={handleRename} disabled={!renameValue.trim()}>
+            <Button onClick={() => void handleRename()} disabled={!renameValue.trim()}>
               儲存
             </Button>
           </DialogFooter>
@@ -324,7 +335,6 @@ function NavItem({
   active,
   onClick,
 }: {
-  href: string
   icon: React.ReactNode
   label: string
   active: boolean
@@ -332,12 +342,13 @@ function NavItem({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
-        'flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors',
+        'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm transition',
         active
           ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-          : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
+          : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
       )}
     >
       {icon}

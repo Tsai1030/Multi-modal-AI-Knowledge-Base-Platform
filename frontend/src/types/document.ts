@@ -3,10 +3,11 @@ export type DocumentStatus = 'pending' | 'processing' | 'completed' | 'failed'
 export interface Document {
   id: string
   title: string
-  filename: string
+  original_filename: string
   file_size: number
-  file_type: string
+  mime_type: string
   status: DocumentStatus
+  error_message: string | null
   uploaded_by_id: string
   created_at: string
   updated_at: string
