@@ -2,7 +2,7 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.config import settings
 from app.schemas.query import SSEEvent
@@ -46,12 +46,11 @@ class RAGQueryService:
             effective_mode = self._select_mode(mode)
             await self._conv_svc.save_user_message(session_id, question, effective_mode)
 
-            answer = await self._query_with_fallback(
+            query_result = await self._query_with_fallback(
                 question=question,
                 mode=effective_mode,
                 conversation_history=conv_context,
             )
-            answer = answer.strip() or EMPTY_RAG_MESSAGE
         except Exception as exc:
             logger.error("RAG query failed for session %s: %s", session_id, exc)
             yield _sse_json(SSEEvent(type="error", content=str(exc)))
@@ -59,9 +58,20 @@ class RAGQueryService:
 
         try:
             full_response = ""
-            for token in _chunk_text(answer):
-                full_response += token
-                yield _sse_json(SSEEvent(type="token", content=token))
+            if _is_async_iterable(query_result):
+                async for token in query_result:
+                    full_response += token
+                    yield _sse_json(SSEEvent(type="token", content=token))
+            else:
+                answer = str(query_result).strip() or EMPTY_RAG_MESSAGE
+                for token in _chunk_text(answer):
+                    full_response += token
+                    yield _sse_json(SSEEvent(type="token", content=token))
+
+            if not full_response.strip():
+                for token in _chunk_text(EMPTY_RAG_MESSAGE):
+                    full_response += token
+                    yield _sse_json(SSEEvent(type="token", content=token))
         except Exception as exc:
             logger.error("RAG response streaming failed for session %s: %s", session_id, exc)
             yield _sse_json(SSEEvent(type="error", content=str(exc)))
@@ -88,12 +98,17 @@ class RAGQueryService:
         question: str,
         mode: str,
         conversation_history: list[dict[str, str]],
-    ) -> str:
+    ) -> Any:
         result = await self._rag.aquery(
             question,
             mode=mode,
             conversation_history=conversation_history,
+            stream=True,
         )
+
+        if _is_async_iterable(result):
+            return result
+
         answer = str(result)
         if mode != "naive" and _needs_naive_fallback(answer):
             logger.info("No context from mode=%s, retrying with mode=naive", mode)
@@ -101,8 +116,9 @@ class RAGQueryService:
                 question,
                 mode="naive",
                 conversation_history=conversation_history,
+                stream=True,
             )
-            return str(retry)
+            return retry
         return answer
 
 
@@ -117,3 +133,7 @@ def _sse_json(event: SSEEvent) -> str:
 
 def _chunk_text(text: str) -> list[str]:
     return [text[i : i + STREAM_CHUNK_SIZE] for i in range(0, len(text), STREAM_CHUNK_SIZE)]
+
+
+def _is_async_iterable(value: Any) -> bool:
+    return hasattr(value, "__aiter__")

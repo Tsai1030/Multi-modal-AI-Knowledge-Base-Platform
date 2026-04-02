@@ -66,7 +66,15 @@ class OllamaLLMAdapter:
             history_messages: list[dict[str, str]] | None = None,
             stream: bool = False,
             **kwargs: Any,
-        ) -> str:
+        ) -> Any:
+            if stream:
+                return self.complete_stream(
+                    prompt,
+                    system_prompt=system_prompt,
+                    history_messages=history_messages,
+                    **kwargs,
+                )
+
             return await self.complete(
                 prompt,
                 system_prompt=system_prompt,
