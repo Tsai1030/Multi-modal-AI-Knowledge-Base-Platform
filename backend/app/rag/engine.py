@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 from raganything import RAGAnything, RAGAnythingConfig
@@ -55,6 +56,8 @@ class RAGEngine:
         5. Build RAGAnythingConfig with ChromaDB as vector_storage
         6. Instantiate RAGAnything with injected llm/vision/embedding funcs
         """
+        cls._ensure_libreoffice_in_path()
+
         _register_chroma_storage()
 
         cls._llm_adapter = OllamaLLMAdapter(
@@ -134,3 +137,16 @@ class RAGEngine:
         cls._vision_adapter = None
         cls._embedding_adapter = None
         logger.info("RAGEngine shut down")
+
+    @classmethod
+    def _ensure_libreoffice_in_path(cls) -> None:
+        libreoffice_program_dir = "C:\\Program Files\\LibreOffice\\program"
+        soffice = os.path.join(libreoffice_program_dir, "soffice.exe")
+        if not os.path.exists(soffice):
+            return
+
+        current_path = os.environ.get("PATH", "")
+        path_parts = current_path.split(os.pathsep) if current_path else []
+        if libreoffice_program_dir not in path_parts:
+            os.environ["PATH"] = f"{libreoffice_program_dir}{os.pathsep}{current_path}"
+            logger.info("Added LibreOffice to PATH for current backend process")
