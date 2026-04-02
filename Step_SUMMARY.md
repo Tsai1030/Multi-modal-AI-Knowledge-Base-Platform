@@ -464,3 +464,97 @@ data: [DONE]
 ## 驗證結果
 - 20 個新增測試通過（12 sessions + 8 query）
 - 85 個測試全數通過（20 新增 + 65 既有）
+
+---
+
+# STEP 7 — 前端開發完成摘要
+
+## 完成項目
+
+### 技術選型與架構決策
+
+**DECISION STEP7-A (Auth Option B)**: JWT 儲存策略採 httpOnly cookie + Next.js BFF API route，不使用 localStorage。
+- Login 後通過 `POST /api/auth/token` 設定 httpOnly cookie
+- Page load 通過 `GET /api/auth/me` 讀取 cookie 並回傳 user + token，token 存入 Zustand in-memory
+- proxy.ts 檢查 cookie 存在性做路由守衛
+- Axios interceptor 使用 Zustand in-memory token 做 Authorization header
+- 安全性：cookie 不可被 JS 讀取（httpOnly）；token 在 memory 中，重載自動從 cookie 恢復
+
+**DECISION STEP7-B (Next.js 16)**: middleware.ts → proxy.ts，函式名 middleware() → proxy()
+**DECISION STEP7-C (base-ui)**: `asChild` → `render` prop（@base-ui/react 不支援 asChild）
+**DECISION STEP7-D (MAC 設計)**: 深色側邊欄（near-black） + 淺色主內容區，全域 `dark` class
+
+### 1. 型別定義
+
+| 檔案 | 說明 |
+|------|------|
+| `frontend/src/types/auth.ts` | UserPublic, LoginRequest, SignupRequest, TokenResponse |
+| `frontend/src/types/session.ts` | ChatSession, SessionListResponse, SessionCreateRequest |
+| `frontend/src/types/message.ts` | Message, SessionDetailResponse, SSEEvent, SSEEventType |
+| `frontend/src/types/document.ts` | Document, DocumentStatus, DocumentListResponse |
+
+### 2. API 客戶端 (`lib/api.ts`)
+- Axios instance，baseURL = `NEXT_PUBLIC_API_URL`
+- Request interceptor：自動附加 Authorization header（從 Zustand memory 取 token）
+- Response interceptor：401 → logout + redirect `/login`
+- 封裝 `authApi`, `sessionApi`, `documentApi`, `adminApi`
+
+### 3. Next.js BFF API Routes
+| 路由 | 說明 |
+|------|------|
+| `POST /api/auth/token` | 設定 httpOnly cookie (maxAge 7天) |
+| `DELETE /api/auth/token` | 清除 cookie (logout) |
+| `GET /api/auth/me` | 讀取 cookie → 呼叫 FastAPI → 回傳 user + token |
+
+### 4. Zustand Stores
+- **authStore**: user, token, isLoading, setAuth, logout, restoreFromServer
+- **chatStore**: sessions, messages, streamingContent, 完整 CRUD + streaming state
+
+### 5. 主題設計（Mac 黑白）
+- `globals.css`：深色側邊欄 `--sidebar: oklch(0.13 0 0)` (light) / `oklch(0.09 0 0)` (dark)
+- `layout.tsx`：`dark` class 預設套用深色模式
+- `--radius: 0.5rem`（略小於預設，符合 macOS 精緻感）
+
+### 6. 路由守衛 (`src/proxy.ts`)
+- 檢查 `auth_token` cookie 存在性
+- 未登入 → redirect `/login?next=<path>`
+- 已登入訪問 `/login`、`/signup` → redirect `/chat`
+- 根路徑 `/` → 依 cookie 狀態決定 redirect
+
+### 7. 認證頁面 (`(auth)/`)
+- **login/page.tsx**: react-hook-form 表單、`useSearchParams` 以 Suspense 包裝、登入成功設 cookie
+- **signup/page.tsx**: 密碼強度即時提示、成功後 auto-login
+- 使用 shadcn `Card`, `Field`, `FieldLabel`, `FieldError`, `Input`, `Button`
+
+### 8. Dashboard 佈局
+- **(dashboard)/layout.tsx**: Client Component，頁面載入時呼叫 `restoreFromServer` 恢復 auth 狀態，未登入 redirect `/login`
+- **SessionSidebar.tsx**: 深色側邊欄、新對話（模式選擇）、session 列表（hover 操作選單）、文件庫 / Admin 連結、用戶資訊 + 登出
+
+### 9. 聊天功能
+| 元件 | 功能 |
+|------|------|
+| `ChatWindow.tsx` | 訊息列表 + 自動捲動 + streaming 狀態管理 |
+| `MessageBubble.tsx` | user（右對齊黑色）/ assistant（左對齊灰色）+ Markdown + RAG sources |
+| `StreamingText.tsx` | 逐字顯示 + blinking cursor 動畫 |
+| `InputBar.tsx` | Textarea、Enter 送出 / Shift+Enter 換行、streaming 期間禁用 |
+| `useSSEStream.ts` | fetch + ReadableStream 逐行解析 SSE，分派 token/done/error |
+
+### 10. 文件管理
+- **UploadZone.tsx**: react-dropzone 拖拉上傳 + 進度條模擬 + 多格式支援
+- **DocumentList.tsx**: 狀態顏色標籤 + processing 每 3 秒 polling + 刪除確認
+
+### 11. Admin 頁面
+- **admin/users/page.tsx**: 用戶表格 + 角色切換 + 啟用/停用
+- **admin/documents/page.tsx**: 所有文件列表 + 刪除
+
+## 錯誤修正記錄
+- `FieldMessage` → `FieldError`（shadcn base-nova 實際 export 名稱）
+- `TooltipTrigger asChild` → `render` prop（@base-ui 不支援 asChild）
+- `DropdownMenuTrigger asChild` → `render` prop
+- `delayDuration` → `delay`（TooltipProvider base-ui 參數名）
+- `useSearchParams()` 包裝在 Suspense 內（Next.js 16 靜態預渲染要求）
+
+## 驗證結果
+- `next build` 成功，12 個 route 全部編譯通過
+- TypeScript type check 通過
+- 無 linting 錯誤
