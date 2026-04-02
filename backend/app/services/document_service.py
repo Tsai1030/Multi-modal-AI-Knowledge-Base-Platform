@@ -301,9 +301,8 @@ class DocumentService:
 
     async def _build_image_text(self, image_path: Path, original_filename: str) -> str:
         default_text = (
-            f"Image document: {original_filename}\n"
-            f"Filename: {image_path.name}\n"
-            "Auto caption unavailable; indexed with file metadata only."
+            f"這是一張名為 {original_filename} 的圖片。"
+            "圖片內容無法自動辨識，僅以檔名索引。"
         )
 
         vision_func = getattr(self._rag, "vision_model_func", None)
@@ -322,10 +321,7 @@ class DocumentService:
             caption_text = str(caption).strip()
             if not caption_text:
                 return default_text
-            return (
-                f"Image document: {original_filename}\n"
-                f"Caption:\n{caption_text}"
-            )
+            return f"這是一張名為 {original_filename} 的圖片。圖片內容：{caption_text}"
         except Exception as exc:
             logger.warning("Image caption generation failed for %s: %s", image_path, exc)
             return default_text
