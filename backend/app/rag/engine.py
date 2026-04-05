@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from raganything import RAGAnything, RAGAnythingConfig
 
 from app.rag.chroma_adapter import ChromaVectorDBStorage
+from app.rag.chunk_id_patch import apply_chunk_id_patch
 from app.rag.embedding_adapter import OllamaEmbeddingAdapter
 from app.rag.llm_adapter import OllamaLLMAdapter, OllamaVisionAdapter
 
@@ -57,6 +58,7 @@ class RAGEngine:
         6. Instantiate RAGAnything with injected llm/vision/embedding funcs
         """
         cls._ensure_libreoffice_in_path()
+        apply_chunk_id_patch()
 
         _register_chroma_storage()
 
