@@ -17,7 +17,7 @@ import pytest
 class TestOllamaLLMAdapter:
     def _make_adapter(self):
         from app.rag.llm_adapter import OllamaLLMAdapter
-        return OllamaLLMAdapter(base_url="http://localhost:11434", model="gpt-oss:latest")
+        return OllamaLLMAdapter(base_url="http://localhost:11434", model="gemma4:e2b")
 
     def _mock_response(self, content: str) -> MagicMock:
         mock_resp = MagicMock()
@@ -108,7 +108,7 @@ class TestOllamaVisionAdapter:
         from app.rag.llm_adapter import OllamaVisionAdapter
         return OllamaVisionAdapter(
             base_url="http://localhost:11434",
-            model="llava:7b",
+            model="gemma4:e2b",
             llm_adapter=llm_adapter,
         )
 
@@ -122,8 +122,8 @@ class TestOllamaVisionAdapter:
         mock_client.post = AsyncMock(return_value=mock_resp)
         return mock_client
 
-    async def test_vision_complete_with_messages_calls_llava(self):
-        """messages provided → VLM Enhanced Query → forward to llava directly."""
+    async def test_vision_complete_with_messages_calls_gemma4(self):
+        """messages provided → VLM Enhanced Query → forward to gemma4 directly."""
         adapter = self._make_adapter()
         messages = [
             {"role": "system", "content": "Describe the image"},
@@ -151,7 +151,7 @@ class TestOllamaVisionAdapter:
     async def test_vision_complete_fallback_to_llm_adapter(self):
         """No messages, no image_data → fallback to llm_adapter."""
         from app.rag.llm_adapter import OllamaLLMAdapter
-        llm_adapter = OllamaLLMAdapter(base_url="http://localhost:11434", model="gpt-oss:latest")
+        llm_adapter = OllamaLLMAdapter(base_url="http://localhost:11434", model="gemma4:e2b")
         adapter = self._make_adapter(llm_adapter=llm_adapter)
 
         mock_resp = MagicMock()

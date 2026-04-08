@@ -17,8 +17,8 @@ class Settings(BaseSettings):
 
     # Ollama
     ollama_base_url: str = "http://localhost:11434"
-    ollama_llm_model: str = "gpt-oss:latest"
-    ollama_vision_model: str = "llava:latest"
+    ollama_llm_model: str = "gemma4:e2b"
+    ollama_vision_model: str = "gemma4:e2b"
 
     # Embedding (via Ollama)
     ollama_embedding_model: str = "bge-m3"

@@ -50,8 +50,8 @@ class RAGEngine:
     async def initialize(cls, settings: Settings) -> None:
         """Startup sequence:
         1. Register ChromaVectorDBStorage into LightRAG's STORAGES registry
-        2. Build OllamaLLMAdapter (gpt-oss:latest) — text reasoning & dialogue
-        3. Build OllamaVisionAdapter (llava:7b) — document image captioning
+        2. Build OllamaLLMAdapter (gemma4:e2b) — text reasoning & dialogue
+        3. Build OllamaVisionAdapter (gemma4:e2b) — document image captioning
            OllamaVisionAdapter holds a reference to llm_adapter for plain-text fallback
         4. Build BGEEmbeddingAdapter (lazy-loaded BAAI/bge-m3)
         5. Build RAGAnythingConfig with ChromaDB as vector_storage

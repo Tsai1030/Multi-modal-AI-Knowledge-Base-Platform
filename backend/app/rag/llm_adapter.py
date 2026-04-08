@@ -100,10 +100,10 @@ class OllamaLLMAdapter:
 
 
 class OllamaVisionAdapter:
-    """Wraps Ollama multimodal endpoint for document image captioning (llava:7b).
+    """Wraps Ollama multimodal endpoint for document image captioning (gemma4:e2b).
 
     Used exclusively by RAGAnything during document ingestion to caption embedded images.
-    Real-time chat always uses OllamaLLMAdapter (gpt-oss:latest).
+    Real-time chat always uses OllamaLLMAdapter (gemma4:e2b).
 
     RAGAnything calls vision_model_func in two patterns:
         - Pure text:   await vision_func(content, system_prompt=system_prompt)
@@ -113,7 +113,7 @@ class OllamaVisionAdapter:
     def __init__(
         self,
         base_url: str,
-        model: str = "llava:7b",
+        model: str = "gemma4:e2b",
         timeout: int = 120,
         llm_adapter: OllamaLLMAdapter | None = None,
     ) -> None:
@@ -134,7 +134,7 @@ class OllamaVisionAdapter:
         """Handle vision requests from RAGAnything.
 
         Priority order:
-        1. messages provided  → VLM Enhanced Query: forward full messages to llava
+        1. messages provided  → VLM Enhanced Query: forward full messages to gemma4
         2. image_data provided → single image analysis with base64 payload
         3. fallback            → pure text; delegate to llm_adapter if available
         """
@@ -180,8 +180,8 @@ class OllamaVisionAdapter:
         }
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.post(f"{self._base_url}/api/chat", json=payload)
-            if resp.status_code == 404 and self._model != "llava:latest":
-                payload["model"] = "llava:latest"
+            if resp.status_code == 404 and self._model != "gemma4:e2b":
+                payload["model"] = "gemma4:e2b"
                 resp = await client.post(f"{self._base_url}/api/chat", json=payload)
             resp.raise_for_status()
             return resp.json()["message"]["content"]
@@ -200,8 +200,8 @@ class OllamaVisionAdapter:
         payload = {"model": self._model, "messages": messages, "stream": False}
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.post(f"{self._base_url}/api/chat", json=payload)
-            if resp.status_code == 404 and self._model != "llava:latest":
-                payload["model"] = "llava:latest"
+            if resp.status_code == 404 and self._model != "gemma4:e2b":
+                payload["model"] = "gemma4:e2b"
                 resp = await client.post(f"{self._base_url}/api/chat", json=payload)
             resp.raise_for_status()
             return resp.json()["message"]["content"]
