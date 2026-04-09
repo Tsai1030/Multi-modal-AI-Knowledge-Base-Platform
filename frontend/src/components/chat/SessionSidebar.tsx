@@ -330,7 +330,7 @@ export function SessionSidebar() {
                           render={
                             <Button
                               variant="ghost"
-                              className="ml-auto hidden size-7 p-0 text-sidebar-foreground/55 hover:text-sidebar-foreground group-hover:flex"
+                              className="ml-auto flex size-7 p-0 text-sidebar-foreground/55 hover:text-sidebar-foreground transition-opacity opacity-0 group-hover:opacity-100 aria-expanded:opacity-100"
                               onClick={(event) => event.stopPropagation()}
                             />
                           }
